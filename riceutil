@@ -1,0 +1,284 @@
+#!/usr/bin/env bash
+
+set -u
+
+PROGRAM_NAME="riceutil"
+VERSION="1.0.0"
+
+print_usage() {
+  cat <<'EOF'
+Kullanım:
+  riceutil binds     ~/.skhdrc dosyasını Vim ile açar
+  riceutil wm        ~/.yabairc dosyasını Vim ile açar
+  riceutil doctor    yabai/skhd durumunu, config'lerini ve loglarını basar
+  riceutil update    Homebrew paketlerini günceller
+  riceutil help      bu yardımı gösterir
+
+Ortam değişkenleri:
+  RICEUTIL_EDITOR       Editör komutu (varsayılan: vim)
+  RICEUTIL_SKHD_CONFIG  skhd config yolunu zorla
+  RICEUTIL_YABAI_CONFIG yabai config yolunu zorla
+EOF
+}
+
+fail() {
+  printf '%s: %s\n' "$PROGRAM_NAME" "$*" >&2
+  exit 1
+}
+
+resolve_skhd_config() {
+  if [ -n "${RICEUTIL_SKHD_CONFIG:-}" ]; then
+    printf '%s\n' "$RICEUTIL_SKHD_CONFIG"
+  elif [ -f "$HOME/.skhdrc" ]; then
+    printf '%s\n' "$HOME/.skhdrc"
+  elif [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/skhd/skhdrc" ]; then
+    printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/skhd/skhdrc"
+  else
+    printf '%s\n' "$HOME/.skhdrc"
+  fi
+}
+
+resolve_yabai_config() {
+  if [ -n "${RICEUTIL_YABAI_CONFIG:-}" ]; then
+    printf '%s\n' "$RICEUTIL_YABAI_CONFIG"
+  elif [ -f "$HOME/.yabairc" ]; then
+    printf '%s\n' "$HOME/.yabairc"
+  elif [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/yabai/yabairc" ]; then
+    printf '%s\n' "${XDG_CONFIG_HOME:-$HOME/.config}/yabai/yabairc"
+  else
+    printf '%s\n' "$HOME/.yabairc"
+  fi
+}
+
+open_in_editor() {
+  local path="$1"
+  local editor="${RICEUTIL_EDITOR:-vim}"
+
+  command -v "$editor" >/dev/null 2>&1 || fail "'$editor' bulunamadı. Vim'i kur veya RICEUTIL_EDITOR ayarla."
+  exec "$editor" "$path"
+}
+
+print_section() {
+  printf '\n===== %s =====\n' "$1"
+}
+
+print_command_version() {
+  local command_name="$1"
+  local command_path
+
+  if command_path="$(command -v "$command_name" 2>/dev/null)"; then
+    printf '%-8s %s\n' "$command_name:" "$command_path"
+    case "$command_name" in
+      yabai|skhd)
+        "$command_name" --version 2>&1 | sed -n '1p' || true
+        ;;
+      brew)
+        brew --version 2>&1 | sed -n '1p' || true
+        ;;
+      vim)
+        vim --version 2>&1 | sed -n '1p' || true
+        ;;
+    esac
+  else
+    printf '%-8s BULUNAMADI\n' "$command_name:"
+  fi
+}
+
+SEEN_FILES="
+"
+FOUND_CONFIGS=0
+FOUND_LOGS=0
+
+dump_file() {
+  local category="$1"
+  local path="$2"
+
+  [ -f "$path" ] || return 0
+
+  case "$SEEN_FILES" in
+    *"
+$path
+"*) return 0 ;;
+  esac
+  SEEN_FILES="${SEEN_FILES}${path}
+"
+
+  if [ "$category" = "config" ]; then
+    FOUND_CONFIGS=$((FOUND_CONFIGS + 1))
+  else
+    FOUND_LOGS=$((FOUND_LOGS + 1))
+  fi
+
+  printf '\n--- %s ---\n' "$path"
+  if [ -r "$path" ]; then
+    cat "$path"
+    printf '\n'
+  else
+    printf '[okuma izni yok]\n'
+  fi
+}
+
+dump_directory_files() {
+  local category="$1"
+  local directory="$2"
+  local path
+
+  [ -d "$directory" ] || return 0
+  while IFS= read -r path; do
+    dump_file "$category" "$path"
+  done < <(find "$directory" -type f -print 2>/dev/null)
+}
+
+doctor() {
+  local username
+  local temp_root="${TMPDIR:-/tmp}"
+  local path
+
+  username="${USER:-$(id -un)}"
+
+  printf '%s doctor %s\n' "$PROGRAM_NAME" "$VERSION"
+  printf 'Tarih: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %z')"
+
+  print_section "Sistem"
+  if command -v sw_vers >/dev/null 2>&1; then
+    sw_vers 2>&1 || true
+  fi
+  uname -a 2>&1 || true
+  printf 'Kullanıcı: %s (uid=%s)\n' "$username" "$(id -u)"
+  printf 'Shell: %s\n' "${SHELL:-bilinmiyor}"
+
+  print_section "Komutlar"
+  print_command_version yabai
+  print_command_version skhd
+  print_command_version brew
+  print_command_version vim
+
+  print_section "Çalışan süreçler"
+  if command -v pgrep >/dev/null 2>&1; then
+    local running_processes=""
+    running_processes="$({ pgrep -x -l yabai || true; pgrep -x -l skhd || true; } 2>/dev/null)"
+    if [ -n "$running_processes" ]; then
+      printf '%s\n' "$running_processes"
+    else
+      printf 'Çalışan yabai/skhd süreci bulunamadı.\n'
+    fi
+  else
+    printf 'pgrep bulunamadı.\n'
+  fi
+
+  print_section "launchctl servisleri"
+  if command -v launchctl >/dev/null 2>&1; then
+    launchctl list 2>&1 | awk '
+      tolower($0) ~ /(yabai|skhd)/ { print; found=1 }
+      END { if (!found) print "yabai/skhd LaunchAgent kaydı bulunamadı." }
+    ' || true
+  else
+    printf 'launchctl bulunamadı.\n'
+  fi
+
+  print_section "Homebrew servisleri"
+  if command -v brew >/dev/null 2>&1; then
+    brew services list 2>&1 | awk '
+      NR == 1 { print; next }
+      tolower($0) ~ /(yabai|skhd)/ { print; found=1 }
+      END { if (!found) print "Homebrew servis listesinde yabai/skhd bulunamadı." }
+    ' || true
+  else
+    printf 'brew bulunamadı.\n'
+  fi
+
+  print_section "Config dosyaları"
+  dump_file config "${RICEUTIL_YABAI_CONFIG:-$(resolve_yabai_config)}"
+  dump_file config "$HOME/.yabairc"
+  dump_file config "${XDG_CONFIG_HOME:-$HOME/.config}/yabai/yabairc"
+  dump_file config "${RICEUTIL_SKHD_CONFIG:-$(resolve_skhd_config)}"
+  dump_file config "$HOME/.skhdrc"
+  dump_file config "${XDG_CONFIG_HOME:-$HOME/.config}/skhd/skhdrc"
+
+  for path in \
+    "$HOME/Library/LaunchAgents/com.koekeishiya.yabai.plist" \
+    "$HOME/Library/LaunchAgents/com.koekeishiya.skhd.plist" \
+    "$HOME/Library/LaunchAgents/homebrew.mxcl.yabai.plist" \
+    "$HOME/Library/LaunchAgents/homebrew.mxcl.skhd.plist" \
+    "/Library/LaunchDaemons/com.koekeishiya.yabai.plist" \
+    "/Library/LaunchDaemons/com.koekeishiya.skhd.plist"; do
+    dump_file config "$path"
+  done
+
+  if [ "$FOUND_CONFIGS" -eq 0 ]; then
+    printf 'Bilinen konumlarda yabai/skhd config dosyası bulunamadı.\n'
+  fi
+
+  print_section "Log dosyaları"
+  for path in \
+    "/tmp/yabai_${username}.out.log" \
+    "/tmp/yabai_${username}.err.log" \
+    "/tmp/skhd_${username}.out.log" \
+    "/tmp/skhd_${username}.err.log" \
+    "${temp_root%/}/yabai_${username}.out.log" \
+    "${temp_root%/}/yabai_${username}.err.log" \
+    "${temp_root%/}/skhd_${username}.out.log" \
+    "${temp_root%/}/skhd_${username}.err.log" \
+    "$HOME/Library/Logs/yabai.log" \
+    "$HOME/Library/Logs/skhd.log"; do
+    dump_file log "$path"
+  done
+
+  dump_directory_files log "$HOME/Library/Logs/yabai"
+  dump_directory_files log "$HOME/Library/Logs/skhd"
+  dump_directory_files log "$HOME/Library/Logs/Homebrew/yabai"
+  dump_directory_files log "$HOME/Library/Logs/Homebrew/skhd"
+
+  for path in "$HOME"/Library/Logs/*yabai* "$HOME"/Library/Logs/*skhd*; do
+    dump_file log "$path"
+  done
+
+  if [ "$FOUND_LOGS" -eq 0 ]; then
+    printf 'Bilinen konumlarda yabai/skhd log dosyası bulunamadı.\n'
+  fi
+
+  print_section "Özet"
+  printf '%s config/servis dosyası ve %s log dosyası çıktılandı.\n' "$FOUND_CONFIGS" "$FOUND_LOGS"
+}
+
+update_homebrew() {
+  command -v brew >/dev/null 2>&1 || fail "Homebrew bulunamadı: https://brew.sh"
+
+  printf 'Homebrew paket bilgileri güncelleniyor...\n'
+  brew update || fail "'brew update' başarısız oldu."
+
+  printf '\nKurulu paketler güncelleniyor...\n'
+  brew upgrade || fail "'brew upgrade' başarısız oldu."
+
+  printf '\nHomebrew güncellemesi tamamlandı.\n'
+}
+
+case "${1:-help}" in
+  binds)
+    [ "$#" -eq 1 ] || fail "binds ek argüman kabul etmiyor."
+    open_in_editor "$(resolve_skhd_config)"
+    ;;
+  wm)
+    [ "$#" -eq 1 ] || fail "wm ek argüman kabul etmiyor."
+    open_in_editor "$(resolve_yabai_config)"
+    ;;
+  doctor)
+    [ "$#" -eq 1 ] || fail "doctor ek argüman kabul etmiyor."
+    doctor
+    ;;
+  update)
+    [ "$#" -eq 1 ] || fail "update ek argüman kabul etmiyor."
+    update_homebrew
+    ;;
+  help|-h|--help)
+    print_usage
+    ;;
+  version|-v|--version)
+    printf '%s %s\n' "$PROGRAM_NAME" "$VERSION"
+    ;;
+  *)
+    printf '%s: bilinmeyen komut: %s\n\n' "$PROGRAM_NAME" "$1" >&2
+    print_usage >&2
+    exit 2
+    ;;
+esac

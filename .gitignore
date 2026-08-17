@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editor files
+*.swp
+*.swo
+*~
+
+# Local diagnostic output
+riceutil-doctor*.txt
