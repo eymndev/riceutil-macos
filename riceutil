@@ -3,13 +3,16 @@
 set -u
 
 PROGRAM_NAME="riceutil"
-VERSION="1.0.0"
+VERSION="1.4.0"
 
 print_usage() {
   cat <<'EOF'
 Kullanım:
-  riceutil binds     ~/.skhdrc dosyasını Vim ile açar
-  riceutil wm        ~/.yabairc dosyasını Vim ile açar
+  riceutil binds     skhd alt komutlarını gösterir
+  riceutil wm        yabai alt komutlarını gösterir
+  riceutil reload    skhd ve yabai config'lerini yeniler
+  riceutil kitty     kitty.conf dosyasını Vim ile açar
+  riceutil zsh       .zshrc dosyasını Vim ile açar
   riceutil doctor    yabai/skhd durumunu, config'lerini ve loglarını basar
   riceutil update    Homebrew paketlerini günceller
   riceutil help      bu yardımı gösterir
@@ -18,6 +21,40 @@ Ortam değişkenleri:
   RICEUTIL_EDITOR       Editör komutu (varsayılan: vim)
   RICEUTIL_SKHD_CONFIG  skhd config yolunu zorla
   RICEUTIL_YABAI_CONFIG yabai config yolunu zorla
+  RICEUTIL_KITTY_CONFIG Kitty config yolunu zorla
+  RICEUTIL_ZSH_CONFIG   Zsh config yolunu zorla
+EOF
+}
+
+print_binds_usage() {
+  cat <<'EOF'
+Kullanım:
+  riceutil binds config   skhd config dosyasını Vim ile açar
+  riceutil binds reload   çalışan skhd'ye config'i yeniden yükletir
+  riceutil binds help     bu yardımı gösterir
+EOF
+}
+
+print_wm_usage() {
+  cat <<'EOF'
+Kullanım:
+  riceutil wm config   yabai config dosyasını Vim ile açar
+  riceutil wm reload   yabai servisini yeniden başlatıp config'i yükler
+  riceutil wm mode     pencere yöneticisi modlarını gösterir
+  riceutil wm help     bu yardımı gösterir
+EOF
+}
+
+print_wm_mode_usage() {
+  cat <<'EOF'
+Kullanım:
+  riceutil wm mode mac             normal macOS pencere yönetimine geçer
+  riceutil wm mode yabai           yabai pencere yönetimine geçer
+  riceutil wm mode stage-manager   Stage Manager'a geçer
+
+Takma adlar:
+  mac: normal, native
+  stage-manager: stage, stagemanager
 EOF
 }
 
@@ -50,11 +87,40 @@ resolve_yabai_config() {
   fi
 }
 
+resolve_kitty_config() {
+  if [ -n "${RICEUTIL_KITTY_CONFIG:-}" ]; then
+    printf '%s\n' "$RICEUTIL_KITTY_CONFIG"
+  elif [ -n "${KITTY_CONFIG_DIRECTORY:-}" ]; then
+    printf '%s\n' "${KITTY_CONFIG_DIRECTORY%/}/kitty.conf"
+  elif [ -n "${XDG_CONFIG_HOME:-}" ] && [ -f "$XDG_CONFIG_HOME/kitty/kitty.conf" ]; then
+    printf '%s\n' "$XDG_CONFIG_HOME/kitty/kitty.conf"
+  elif [ -f "$HOME/.config/kitty/kitty.conf" ]; then
+    printf '%s\n' "$HOME/.config/kitty/kitty.conf"
+  elif [ -n "${XDG_CONFIG_HOME:-}" ]; then
+    printf '%s\n' "$XDG_CONFIG_HOME/kitty/kitty.conf"
+  else
+    printf '%s\n' "$HOME/.config/kitty/kitty.conf"
+  fi
+}
+
+resolve_zsh_config() {
+  if [ -n "${RICEUTIL_ZSH_CONFIG:-}" ]; then
+    printf '%s\n' "$RICEUTIL_ZSH_CONFIG"
+  else
+    printf '%s\n' "${ZDOTDIR:-$HOME}/.zshrc"
+  fi
+}
+
 open_in_editor() {
   local path="$1"
   local editor="${RICEUTIL_EDITOR:-vim}"
+  local parent_directory
 
   command -v "$editor" >/dev/null 2>&1 || fail "'$editor' bulunamadı. Vim'i kur veya RICEUTIL_EDITOR ayarla."
+  parent_directory="$(dirname "$path")"
+  if [ ! -d "$parent_directory" ]; then
+    mkdir -p "$parent_directory" || fail "Config klasörü oluşturulamadı: $parent_directory"
+  fi
   exec "$editor" "$path"
 }
 
@@ -253,14 +319,218 @@ update_homebrew() {
   printf '\nHomebrew güncellemesi tamamlandı.\n'
 }
 
+reload_skhd() {
+  if ! command -v skhd >/dev/null 2>&1; then
+    printf '%s: skhd bulunamadı.\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+
+  printf 'skhd config yenileniyor...\n'
+  if skhd --reload; then
+    printf 'skhd config yenilendi.\n'
+  else
+    printf '%s: skhd config yenilenemedi. skhd çalışıyor mu?\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+}
+
+reload_yabai() {
+  if ! command -v yabai >/dev/null 2>&1; then
+    printf '%s: yabai bulunamadı.\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+
+  printf 'yabai servisi yeniden başlatılıyor...\n'
+  if yabai --restart-service; then
+    printf 'yabai config yenilendi.\n'
+  else
+    printf '%s: yabai config yenilenemedi. Servis kurulu mu?\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+}
+
+is_yabai_running() {
+  command -v pgrep >/dev/null 2>&1 && pgrep -x yabai >/dev/null 2>&1
+}
+
+stop_yabai_service() {
+  if ! command -v yabai >/dev/null 2>&1; then
+    printf 'yabai kurulu değil; durdurma adımı atlandı.\n'
+    return 0
+  fi
+
+  printf 'yabai servisi durduruluyor...\n'
+  if yabai --stop-service; then
+    printf 'yabai servisi durduruldu.\n'
+    return 0
+  fi
+
+  if is_yabai_running; then
+    printf '%s: yabai servisi durdurulamadı.\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+
+  printf 'yabai zaten çalışmıyor.\n'
+}
+
+start_yabai_service() {
+  if ! command -v yabai >/dev/null 2>&1; then
+    printf '%s: yabai bulunamadı. Önce yabai kurmalısın.\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+
+  if is_yabai_running; then
+    printf 'yabai servisi yeniden başlatılıyor...\n'
+    if yabai --restart-service; then
+      printf 'yabai servisi yeniden başlatıldı.\n'
+    else
+      printf '%s: yabai servisi yeniden başlatılamadı.\n' "$PROGRAM_NAME" >&2
+      return 1
+    fi
+  else
+    printf 'yabai servisi başlatılıyor...\n'
+    if yabai --start-service; then
+      printf 'yabai servisi başlatıldı.\n'
+    else
+      printf '%s: yabai servisi başlatılamadı.\n' "$PROGRAM_NAME" >&2
+      return 1
+    fi
+  fi
+}
+
+set_stage_manager() {
+  local enabled="$1"
+
+  command -v defaults >/dev/null 2>&1 || {
+    printf '%s: macOS defaults komutu bulunamadı.\n' "$PROGRAM_NAME" >&2
+    return 1
+  }
+  command -v killall >/dev/null 2>&1 || {
+    printf '%s: killall komutu bulunamadı.\n' "$PROGRAM_NAME" >&2
+    return 1
+  }
+
+  if ! defaults write com.apple.WindowManager GloballyEnabled -bool "$enabled"; then
+    printf '%s: Stage Manager tercihi değiştirilemedi.\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+
+  printf 'Dock yeniden başlatılıyor...\n'
+  if ! killall Dock; then
+    printf '%s: Dock yeniden başlatılamadı.\n' "$PROGRAM_NAME" >&2
+    return 1
+  fi
+}
+
+switch_wm_mode() {
+  local mode="$1"
+
+  case "$mode" in
+    mac|normal|native)
+      stop_yabai_service || return 1
+      set_stage_manager false || return 1
+      printf '\nNormal macOS pencere yönetimi etkin.\n'
+      ;;
+    yabai)
+      command -v yabai >/dev/null 2>&1 || {
+        printf '%s: yabai bulunamadı. Önce yabai kurmalısın.\n' "$PROGRAM_NAME" >&2
+        return 1
+      }
+      set_stage_manager false || return 1
+      start_yabai_service || return 1
+      printf '\nyabai pencere yönetimi etkin.\n'
+      ;;
+    stage-manager|stage|stagemanager)
+      stop_yabai_service || return 1
+      set_stage_manager true || return 1
+      printf '\nStage Manager etkin.\n'
+      ;;
+    *)
+      printf '%s: bilinmeyen wm modu: %s\n\n' "$PROGRAM_NAME" "$mode" >&2
+      print_wm_mode_usage >&2
+      return 2
+      ;;
+  esac
+
+  return 0
+}
+
+reload_all() {
+  local reload_status=0
+
+  reload_skhd || reload_status=1
+  printf '\n'
+  reload_yabai || reload_status=1
+
+  if [ "$reload_status" -eq 0 ]; then
+    printf "\nTüm config'ler yenilendi.\n"
+  fi
+  return "$reload_status"
+}
+
 case "${1:-help}" in
   binds)
-    [ "$#" -eq 1 ] || fail "binds ek argüman kabul etmiyor."
-    open_in_editor "$(resolve_skhd_config)"
+    case "${2:-help}" in
+      config)
+        [ "$#" -eq 2 ] || fail "binds config ek argüman kabul etmiyor."
+        open_in_editor "$(resolve_skhd_config)"
+        ;;
+      reload)
+        [ "$#" -eq 2 ] || fail "binds reload ek argüman kabul etmiyor."
+        reload_skhd || exit 1
+        ;;
+      help|-h|--help)
+        [ "$#" -le 2 ] || fail "binds help ek argüman kabul etmiyor."
+        print_binds_usage
+        ;;
+      *)
+        printf '%s: bilinmeyen binds komutu: %s\n\n' "$PROGRAM_NAME" "$2" >&2
+        print_binds_usage >&2
+        exit 2
+        ;;
+    esac
     ;;
   wm)
-    [ "$#" -eq 1 ] || fail "wm ek argüman kabul etmiyor."
-    open_in_editor "$(resolve_yabai_config)"
+    case "${2:-help}" in
+      config)
+        [ "$#" -eq 2 ] || fail "wm config ek argüman kabul etmiyor."
+        open_in_editor "$(resolve_yabai_config)"
+        ;;
+      reload)
+        [ "$#" -eq 2 ] || fail "wm reload ek argüman kabul etmiyor."
+        reload_yabai || exit 1
+        ;;
+      mode)
+        if [ "$#" -eq 2 ]; then
+          print_wm_mode_usage
+        elif [ "$#" -eq 3 ]; then
+          switch_wm_mode "$3" || exit $?
+        else
+          fail "wm mode yalnızca bir mod kabul ediyor."
+        fi
+        ;;
+      help|-h|--help)
+        [ "$#" -le 2 ] || fail "wm help ek argüman kabul etmiyor."
+        print_wm_usage
+        ;;
+      *)
+        printf '%s: bilinmeyen wm komutu: %s\n\n' "$PROGRAM_NAME" "$2" >&2
+        print_wm_usage >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  reload)
+    [ "$#" -eq 1 ] || fail "reload ek argüman kabul etmiyor."
+    reload_all || exit 1
+    ;;
+  kitty)
+    [ "$#" -eq 1 ] || fail "kitty ek argüman kabul etmiyor."
+    open_in_editor "$(resolve_kitty_config)"
+    ;;
+  zsh)
+    [ "$#" -eq 1 ] || fail "zsh ek argüman kabul etmiyor."
+    open_in_editor "$(resolve_zsh_config)"
     ;;
   doctor)
     [ "$#" -eq 1 ] || fail "doctor ek argüman kabul etmiyor."

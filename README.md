@@ -1,6 +1,6 @@
 # riceutil
 
-`yabai`, `skhd` ve Homebrew için küçük bir macOS terminal yardımcısı.
+`yabai`, `skhd`, Kitty, Zsh ve Homebrew için küçük bir macOS terminal yardımcısı.
 
 ## Kurulum
 
@@ -26,14 +26,48 @@ fish_add_path ~/.local/bin
 ```sh
 riceutil binds
 riceutil wm
+riceutil reload
+riceutil kitty
+riceutil zsh
 riceutil doctor
 riceutil update
 ```
 
-- `binds`: Var olan config'i önce `~/.skhdrc`, sonra `$XDG_CONFIG_HOME/skhd/skhdrc` altında arar ve Vim'de açar. Hiçbiri yoksa `~/.skhdrc` için yeni Vim tamponu açar.
-- `wm`: Var olan config'i önce `~/.yabairc`, sonra `$XDG_CONFIG_HOME/yabai/yabairc` altında arar ve Vim'de açar. Hiçbiri yoksa `~/.yabairc` için yeni Vim tamponu açar.
+- `binds`: Kullanılabilen skhd alt komutlarını gösterir.
+- `wm`: Kullanılabilen yabai alt komutlarını gösterir.
+- `reload`: skhd ve yabai config'lerini birlikte yeniler.
+- `kitty`: `KITTY_CONFIG_DIRECTORY` ve XDG ayarlarını dikkate alarak `kitty.conf` dosyasını Vim'de açar. Config klasörü yoksa oluşturur.
+- `zsh`: `ZDOTDIR` ayarını dikkate alarak `.zshrc` dosyasını Vim'de açar.
 - `doctor`: yabai/skhd sürüm ve servis durumlarını, bilinen config/LaunchAgent dosyalarını ve bulunan log dosyalarının tam içeriğini terminale basar.
 - `update`: Sırayla `brew update` ve `brew upgrade` çalıştırır. `brew cleanup` çalıştırmaz.
+
+skhd veya yabai üzerinde tek başına işlem yapmak için:
+
+```sh
+riceutil binds config
+riceutil binds reload
+riceutil wm config
+riceutil wm reload
+riceutil wm mode mac
+riceutil wm mode yabai
+riceutil wm mode stage-manager
+```
+
+Düz `riceutil binds` ve `riceutil wm` çağrıları ilgili alt komut yardımını gösterir.
+
+### Pencere yöneticisi modları
+
+```sh
+riceutil wm mode mac
+riceutil wm mode yabai
+riceutil wm mode stage-manager
+```
+
+- `mac`: yabai servisini durdurur ve Stage Manager'ı kapatır.
+- `yabai`: Stage Manager'ı kapatır; yabai çalışıyorsa yeniden başlatır, çalışmıyorsa başlatır.
+- `stage-manager`: yabai servisini durdurur ve Stage Manager'ı açar.
+
+Stage Manager tercihini uygulamak için Dock işlemi yeniden başlatılır; ekran öğeleri kısa süreliğine kaybolup geri gelebilir. skhd servisi mod geçişlerinden etkilenmez.
 
 Tanılama raporunu dosyaya almak için:
 
@@ -49,6 +83,8 @@ Config dosyalarında özel bilgiler varsa bu raporu paylaşmadan önce gözden g
 export RICEUTIL_EDITOR=nvim
 export RICEUTIL_SKHD_CONFIG="$HOME/.config/skhd/skhdrc"
 export RICEUTIL_YABAI_CONFIG="$HOME/.config/yabai/yabairc"
+export RICEUTIL_KITTY_CONFIG="$HOME/.config/kitty/kitty.conf"
+export RICEUTIL_ZSH_CONFIG="$HOME/.zshrc"
 ```
 
 ## Lisans
