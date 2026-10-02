@@ -1,6 +1,6 @@
 # riceutil
 
-`yabai`, `skhd`, Homebrew ve [ASCII Wallpaper](https://github.com/eymndev/Wallpaper) için küçük bir macOS yardımcısı. Hem terminal komutu hem de aynı işleri yapan bir SwiftUI uygulaması (Riceutil GUI) var.
+`yabai`, `skhd`, Kitty, Zsh, Homebrew ve [ASCII Wallpaper](https://github.com/eymndev/Wallpaper) için küçük bir macOS yardımcısı. Hem terminal komutu hem de aynı işleri yapan bir SwiftUI uygulaması (Riceutil GUI) var.
 
 ## Kurulum
 
@@ -26,6 +26,9 @@ fish_add_path ~/.local/bin
 ```sh
 riceutil binds
 riceutil wm
+riceutil reload
+riceutil kitty
+riceutil zsh
 riceutil doctor
 riceutil update
 riceutil status
@@ -33,8 +36,11 @@ riceutil gui
 riceutil wallpaper ...
 ```
 
-- `binds`: Var olan config'i önce `~/.skhdrc`, sonra `$XDG_CONFIG_HOME/skhd/skhdrc` altında arar ve Vim'de açar. Hiçbiri yoksa `~/.skhdrc` için yeni Vim tamponu açar.
-- `wm`: Var olan config'i önce `~/.yabairc`, sonra `$XDG_CONFIG_HOME/yabai/yabairc` altında arar ve Vim'de açar. Hiçbiri yoksa `~/.yabairc` için yeni Vim tamponu açar.
+- `binds`: Kullanılabilen skhd alt komutlarını gösterir.
+- `wm`: Kullanılabilen yabai alt komutlarını gösterir.
+- `reload`: skhd ve yabai config'lerini birlikte yeniler.
+- `kitty`: `KITTY_CONFIG_DIRECTORY` ve XDG ayarlarını dikkate alarak `kitty.conf` dosyasını Vim'de açar. Config klasörü yoksa oluşturur.
+- `zsh`: `ZDOTDIR` ayarını dikkate alarak `.zshrc` dosyasını Vim'de açar.
 - `doctor`: yabai/skhd sürüm ve servis durumlarını, bilinen config/LaunchAgent dosyalarını ve bulunan log dosyalarının tam içeriğini terminale basar.
 - `update`: Sırayla `brew update` ve `brew upgrade` çalıştırır. `brew cleanup` çalıştırmaz.
 - `status`: yabai, skhd, Homebrew ve duvar kağıdının kısa durumu (`--tsv` ile makine okunur çıktı).
@@ -71,11 +77,41 @@ export RICEUTIL_WALLPAPER_DIR="$HOME/kod/Wallpaper"
 
 - **Genel**: yabai, skhd, Homebrew ve duvar kağıdının durumu
 - **Duvar Kağıdı**: kur/güncelle, başlat/durdur, tıklayınca değişen tema listesi, panel/saat/tema adı ve sırayla değiştirme ayarları, ekran koruyucu kurulumu
-- **Kısayollar ve WM**: skhd ve yabai config'lerini Terminal'de (Vim) ya da varsayılan düzenleyicide açma
+- **Config ve WM**: skhd, yabai, Kitty ve Zsh config'lerini Terminal'de (Vim) ya da varsayılan düzenleyicide açma, skhd/yabai'yi yeniden yükleme, pencere yöneticisi modu (macOS / yabai / Stage Manager)
 - **Tanılama**: `riceutil doctor` çıktısı, kopyalama ve dosyaya kaydetme
 - **Homebrew**: `brew update` ve `brew upgrade`, çıktısı canlı akar
 
 GUI her işi kendi paketindeki `riceutil` betiğiyle yapar, bu yüzden komut satırıyla aynı davranır. Elle derlemek için `./scripts/build-gui.sh` (çıktı: `build/Riceutil.app`).
+
+## skhd ve yabai
+
+skhd veya yabai üzerinde tek başına işlem yapmak için:
+
+```sh
+riceutil binds config
+riceutil binds reload
+riceutil wm config
+riceutil wm reload
+riceutil wm mode mac
+riceutil wm mode yabai
+riceutil wm mode stage-manager
+```
+
+Düz `riceutil binds` ve `riceutil wm` çağrıları ilgili alt komut yardımını gösterir.
+
+### Pencere yöneticisi modları
+
+```sh
+riceutil wm mode mac
+riceutil wm mode yabai
+riceutil wm mode stage-manager
+```
+
+- `mac`: yabai servisini durdurur ve Stage Manager'ı kapatır.
+- `yabai`: Stage Manager'ı kapatır; yabai çalışıyorsa yeniden başlatır, çalışmıyorsa başlatır.
+- `stage-manager`: yabai servisini durdurur ve Stage Manager'ı açar.
+
+Stage Manager tercihini uygulamak için Dock işlemi yeniden başlatılır; ekran öğeleri kısa süreliğine kaybolup geri gelebilir. skhd servisi mod geçişlerinden etkilenmez.
 
 ## Tanılama
 
@@ -93,6 +129,8 @@ Config dosyalarında özel bilgiler varsa bu raporu paylaşmadan önce gözden g
 export RICEUTIL_EDITOR=nvim
 export RICEUTIL_SKHD_CONFIG="$HOME/.config/skhd/skhdrc"
 export RICEUTIL_YABAI_CONFIG="$HOME/.config/yabai/yabairc"
+export RICEUTIL_KITTY_CONFIG="$HOME/.config/kitty/kitty.conf"
+export RICEUTIL_ZSH_CONFIG="$HOME/.zshrc"
 export RICEUTIL_WALLPAPER_DIR="$HOME/.local/share/riceutil/Wallpaper"
 export RICEUTIL_WALLPAPER_REF=main   # belirli bir dal ya da etiket
 ```

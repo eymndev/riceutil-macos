@@ -23,7 +23,7 @@ enum Page: String, CaseIterable, Identifiable {
         switch self {
         case .overview: return "Genel"
         case .wallpaper: return "Duvar Kağıdı"
-        case .configs: return "Kısayollar ve WM"
+        case .configs: return "Config ve WM"
         case .doctor: return "Tanılama"
         case .homebrew: return "Homebrew"
         }
