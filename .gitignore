@@ -11,3 +11,7 @@
 
 # Local diagnostic output
 riceutil-doctor*.txt
+
+# Derleme çıktıları
+build/
+gui/.build/

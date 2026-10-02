@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: shellcheck ve komut testleri
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck
+        run: shellcheck riceutil install.sh scripts/*.sh tests/*.sh
+      - name: Komut testleri
+        run: ./tests/cli.sh
+
+  mac:
+    name: macOS (GUI ve duvar kağıdı)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Komut testleri
+        run: ./tests/cli.sh
+      - name: Kur (komut + GUI)
+        run: |
+          RICEUTIL_PREFIX="$RUNNER_TEMP/prefix" ./install.sh
+          echo "$RUNNER_TEMP/prefix/bin" >> "$GITHUB_PATH"
+          test -x "$HOME/Applications/Riceutil.app/Contents/MacOS/Riceutil"
+          test -x "$HOME/Applications/Riceutil.app/Contents/Resources/riceutil"
+      - name: GUI açılıyor
+        run: |
+          riceutil gui
+          sleep 6
+          pgrep -x Riceutil
+          screencapture -x gui-genel.png || true
+      - name: Duvar kağıdını kur ve yönet
+        run: |
+          repo=https://github.com/eymndev/Wallpaper.git
+          if ! GIT_TERMINAL_PROMPT=0 git ls-remote "$repo" >/dev/null 2>&1; then
+            echo "::warning::Wallpaper deposu herkese açık değil; uçtan uca duvar kağıdı testi atlandı."
+            exit 0
+          fi
+          # Entegrasyon dalı henüz birleşmediyse onu kullan
+          branch=claude/riceutil-integration-gui-j3ldgp
+          if git ls-remote --exit-code --heads "$repo" "$branch" >/dev/null 2>&1; then
+            export RICEUTIL_WALLPAPER_REF="$branch"
+          fi
+          riceutil wallpaper install --no-saver
+          sleep 8
+          riceutil wallpaper
+          riceutil wallpaper themes
+          riceutil wallpaper theme fire
+          sleep 1
+          test "$(defaults read dev.eymn.ascii-wallpaper theme)" = fire
+          riceutil wallpaper name off
+          sleep 1
+          test "$(defaults read dev.eymn.ascii-wallpaper showThemeName)" = 0
+          riceutil wallpaper name on
+          riceutil wallpaper theme hypr-kath
+          sleep 3
+          screencapture -x wallpaper-hypr-kath.png || true
+          riceutil status
+          riceutil wallpaper stop
+          if pgrep -x AsciiWallpaper; then echo "hâlâ çalışıyor"; exit 1; fi
+          riceutil wallpaper theme lake
+          test "$(defaults read dev.eymn.ascii-wallpaper theme)" = lake
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Ekran-goruntuleri
+          path: "*.png"
+          if-no-files-found: ignore
+      - name: Paketle
+        run: |
+          cd build
+          ditto -c -k --keepParent Riceutil.app Riceutil.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Riceutil
+          path: build/Riceutil.zip

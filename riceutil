@@ -3,7 +3,7 @@
 set -u
 
 PROGRAM_NAME="riceutil"
-VERSION="1.0.0"
+VERSION="1.1.0"
 
 print_usage() {
   cat <<'EOF'
@@ -12,12 +12,30 @@ Kullanım:
   riceutil wm        ~/.yabairc dosyasını Vim ile açar
   riceutil doctor    yabai/skhd durumunu, config'lerini ve loglarını basar
   riceutil update    Homebrew paketlerini günceller
+  riceutil status    yabai, skhd, Homebrew ve duvar kağıdının kısa durumu
+  riceutil gui       Riceutil uygulamasını (GUI) açar
   riceutil help      bu yardımı gösterir
 
+Duvar kağıdı (ASCII Wallpaper, kısaltma: riceutil wp):
+  riceutil wallpaper                 durumu gösterir
+  riceutil wallpaper install         indirir, derler, ~/Applications'a kurar ve başlatır
+  riceutil wallpaper update          depoyu çeker, yeniden derler ve kurar
+  riceutil wallpaper start|stop|restart
+  riceutil wallpaper themes          temaları listeler (* = etkin tema)
+  riceutil wallpaper theme <kimlik>  temayı değiştirir
+  riceutil wallpaper next            sonraki temaya geçer
+  riceutil wallpaper panel on|off    sistem paneli
+  riceutil wallpaper clock on|off    saat
+  riceutil wallpaper name on|off     köşedeki tema adı
+  riceutil wallpaper rotate <dakika> temaları sırayla değiştirir (0 = kapalı)
+  riceutil wallpaper saver           ekran koruyucuyu kurar ve ayarlarını açar
+
 Ortam değişkenleri:
-  RICEUTIL_EDITOR       Editör komutu (varsayılan: vim)
-  RICEUTIL_SKHD_CONFIG  skhd config yolunu zorla
-  RICEUTIL_YABAI_CONFIG yabai config yolunu zorla
+  RICEUTIL_EDITOR         Editör komutu (varsayılan: vim)
+  RICEUTIL_SKHD_CONFIG    skhd config yolunu zorla
+  RICEUTIL_YABAI_CONFIG   yabai config yolunu zorla
+  RICEUTIL_WALLPAPER_DIR  Wallpaper deposunun klasörü (varsayılan: ~/.local/share/riceutil/Wallpaper)
+  RICEUTIL_WALLPAPER_REF  kurulacak dal veya etiket (varsayılan: deponun ana dalı)
 EOF
 }
 
@@ -237,6 +255,13 @@ doctor() {
     printf 'Bilinen konumlarda yabai/skhd log dosyası bulunamadı.\n'
   fi
 
+  print_section "ASCII Wallpaper"
+  if command -v defaults >/dev/null 2>&1; then
+    wallpaper_status
+  else
+    printf 'defaults bulunamadı.\n'
+  fi
+
   print_section "Özet"
   printf '%s config/servis dosyası ve %s log dosyası çıktılandı.\n' "$FOUND_CONFIGS" "$FOUND_LOGS"
 }
@@ -251,6 +276,407 @@ update_homebrew() {
   brew upgrade || fail "'brew upgrade' başarısız oldu."
 
   printf '\nHomebrew güncellemesi tamamlandı.\n'
+}
+
+# ---- ASCII Wallpaper (https://github.com/eymndev/Wallpaper) ----
+
+WALLPAPER_ID="dev.eymn.ascii-wallpaper"
+WALLPAPER_PROCESS="AsciiWallpaper"
+WALLPAPER_APP_NAME="ASCII Wallpaper.app"
+GUI_APP_NAME="Riceutil.app"
+
+wallpaper_dir() {
+  printf '%s\n' "${RICEUTIL_WALLPAPER_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/riceutil/Wallpaper}"
+}
+
+find_wallpaper_app() {
+  local candidate
+
+  for candidate in \
+    "${RICEUTIL_WALLPAPER_APP:-}" \
+    "$HOME/Applications/$WALLPAPER_APP_NAME" \
+    "/Applications/$WALLPAPER_APP_NAME" \
+    "$(wallpaper_dir)/build/$WALLPAPER_APP_NAME"; do
+    if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  if command -v mdfind >/dev/null 2>&1; then
+    candidate="$(mdfind "kMDItemCFBundleIdentifier == '$WALLPAPER_ID'" 2>/dev/null | sed -n '1p')"
+    if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+require_wallpaper_app() {
+  find_wallpaper_app || fail "ASCII Wallpaper kurulu değil. Kurmak için: riceutil wallpaper install"
+}
+
+wallpaper_running() {
+  pgrep -x "$WALLPAPER_PROCESS" >/dev/null 2>&1
+}
+
+wallpaper_themes_file() {
+  local app
+  local file
+
+  app="$(require_wallpaper_app)" || exit 1
+  file="$app/Contents/Resources/web/themes.tsv"
+  [ -f "$file" ] || fail "Kurulu sürümde tema listesi yok. Güncellemek için: riceutil wallpaper update"
+  printf '%s\n' "$file"
+}
+
+# defaults değerini okur, yoksa verilen varsayılanı basar
+wallpaper_pref() {
+  local value
+
+  value="$(defaults read "$WALLPAPER_ID" "$1" 2>/dev/null)" || value="$2"
+  printf '%s\n' "$value"
+}
+
+theme_name() {
+  awk -F '\t' -v id="$2" '$1 == id { print $2; found=1; exit } END { if (!found) exit 1 }' "$1"
+}
+
+# Çalışan uygulamaya dev.eymn.ascii-wallpaper.command dağıtık bildirimi gönderir: anahtar değer [anahtar değer ...]
+wallpaper_send() {
+  osascript -l JavaScript -e '
+    function run(argv) {
+      ObjC.import("Foundation");
+      var info = $.NSMutableDictionary.alloc.init;
+      for (var i = 0; i + 1 < argv.length; i += 2) info.setObjectForKey(argv[i + 1], argv[i]);
+      $.NSDistributedNotificationCenter.defaultCenter.postNotificationNameObjectUserInfoDeliverImmediately(
+        "dev.eymn.ascii-wallpaper.command", "riceutil", info, true);
+    }' "$@" >/dev/null || fail "Duvar kağıdı uygulamasına komut gönderilemedi."
+}
+
+# Uygulama çalışıyorsa bildirimle, çalışmıyorsa doğrudan ayar olarak yazar.
+# wallpaper_apply <bildirim anahtarı> <değer> <defaults anahtarı> <string|bool|int>
+wallpaper_apply() {
+  local value="$2"
+
+  if wallpaper_running; then
+    wallpaper_send "$1" "$value"
+    sleep 0.3
+  else
+    if [ "$4" = "bool" ]; then
+      if [ "$value" = "1" ]; then value=true; else value=false; fi
+    fi
+    defaults write "$WALLPAPER_ID" "$3" "-$4" "$value" || fail "Ayar yazılamadı: $3"
+  fi
+}
+
+parse_switch() {
+  case "$1" in
+    on|açık|acik|1|true|yes) printf '1\n' ;;
+    off|kapalı|kapali|0|false|no) printf '0\n' ;;
+    *) fail "'$1' anlaşılmadı, on veya off yaz." ;;
+  esac
+}
+
+on_off() {
+  if [ "$1" = "1" ]; then printf 'açık'; else printf 'kapalı'; fi
+}
+
+wallpaper_install() {
+  local dir
+  local repo="${RICEUTIL_WALLPAPER_REPO:-https://github.com/eymndev/Wallpaper.git}"
+  local ref="${RICEUTIL_WALLPAPER_REF:-}"
+  local arg
+
+  for arg in "$@"; do
+    case "$arg" in
+      --no-saver|--no-open) ;;
+      *) fail "install için bilinmeyen seçenek: $arg (--no-saver, --no-open)" ;;
+    esac
+  done
+
+  command -v git >/dev/null 2>&1 || fail "git bulunamadı. Önce: xcode-select --install"
+  command -v swift >/dev/null 2>&1 || fail "Swift derleyicisi bulunamadı. Önce: xcode-select --install"
+
+  dir="$(wallpaper_dir)"
+  if [ -d "$dir/.git" ]; then
+    printf 'Wallpaper güncelleniyor: %s\n' "$dir"
+    if [ -n "$ref" ]; then
+      git -C "$dir" fetch origin "$ref" && git -C "$dir" checkout -q --detach FETCH_HEAD
+    elif git -C "$dir" symbolic-ref -q HEAD >/dev/null; then
+      git -C "$dir" pull --ff-only
+    else
+      git -C "$dir" fetch origin && git -C "$dir" checkout -q --detach origin/HEAD
+    fi || fail "Wallpaper deposu güncellenemedi: $dir"
+  else
+    printf 'Wallpaper indiriliyor: %s\n' "$repo"
+    mkdir -p "$(dirname "$dir")"
+    if [ -n "$ref" ]; then
+      git clone --branch "$ref" "$repo" "$dir"
+    else
+      git clone "$repo" "$dir"
+    fi || fail "Wallpaper deposu indirilemedi: $repo"
+  fi
+
+  [ -x "$dir/scripts/install.sh" ] || fail "$dir/scripts/install.sh bulunamadı; depo güncel mi?"
+  printf '\nDerleniyor ve kuruluyor...\n'
+  "$dir/scripts/install.sh" "$@" || fail "Wallpaper kurulumu başarısız oldu."
+}
+
+wallpaper_saver() {
+  local dir
+
+  dir="$(wallpaper_dir)"
+  [ -x "$dir/scripts/build-saver.sh" ] || fail "Wallpaper deposu bulunamadı ($dir). Önce: riceutil wallpaper install"
+  "$dir/scripts/build-saver.sh" --install || fail "Ekran koruyucu kurulamadı."
+  open "x-apple.systempreferences:com.apple.ScreenSaver-Settings.extension" 2>/dev/null || true
+}
+
+wallpaper_start() {
+  local app
+
+  app="$(require_wallpaper_app)" || exit 1
+  if wallpaper_running; then
+    printf 'Duvar kağıdı zaten çalışıyor.\n'
+  else
+    open "$app" || fail "Açılamadı: $app"
+    printf 'Duvar kağıdı başlatıldı.\n'
+  fi
+}
+
+wallpaper_stop() {
+  local _
+
+  if ! wallpaper_running; then
+    printf 'Duvar kağıdı zaten kapalı.\n'
+    return 0
+  fi
+  pkill -x "$WALLPAPER_PROCESS" || true
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    wallpaper_running || break
+    sleep 0.1
+  done
+  printf 'Duvar kağıdı kapatıldı.\n'
+}
+
+wallpaper_themes() {
+  local file
+  local current
+
+  file="$(wallpaper_themes_file)" || exit 1
+  current="$(wallpaper_pref theme lake)"
+  if [ "${1:-}" = "--tsv" ]; then
+    awk -F '\t' -v cur="$current" 'NF >= 2 { printf "%s\t%s\t%d\n", $1, $2, ($1 == cur) }' "$file"
+  else
+    awk -F '\t' -v cur="$current" 'NF >= 2 { printf "%s %-20s %s\n", ($1 == cur ? "*" : " "), $1, $2 }' "$file"
+  fi
+}
+
+wallpaper_set_theme() {
+  local file
+  local name
+
+  file="$(wallpaper_themes_file)" || exit 1
+  name="$(theme_name "$file" "$1")" || fail "Böyle bir tema yok: $1 (liste için: riceutil wallpaper themes)"
+  wallpaper_apply theme "$1" theme string
+  printf 'Tema: %s (%s)\n' "$name" "$1"
+}
+
+wallpaper_next() {
+  local file
+  local current
+  local next
+
+  file="$(wallpaper_themes_file)" || exit 1
+  if wallpaper_running; then
+    wallpaper_send next 1
+    sleep 0.3
+  else
+    current="$(wallpaper_pref theme lake)"
+    next="$(awk -F '\t' -v cur="$current" '
+      NF >= 2 { ids[n++] = $1; if ($1 == cur) at = n }
+      END { if (n) print ids[at % n] }' "$file")"
+    [ -n "$next" ] && defaults write "$WALLPAPER_ID" theme -string "$next"
+  fi
+  current="$(wallpaper_pref theme lake)"
+  printf 'Tema: %s (%s)\n' "$(theme_name "$file" "$current" || printf '?')" "$current"
+}
+
+wallpaper_status() {
+  local app=""
+  local running=0
+  local theme
+  local name=""
+  local file
+
+  app="$(find_wallpaper_app)" || app=""
+  wallpaper_running && running=1
+  theme="$(wallpaper_pref theme lake)"
+  file="$app/Contents/Resources/web/themes.tsv"
+  if [ -n "$app" ] && [ -f "$file" ]; then
+    name="$(theme_name "$file" "$theme")" || name=""
+  fi
+
+  if [ "${1:-}" = "--tsv" ]; then
+    printf 'wallpaper.app\t%s\n' "$app"
+    printf 'wallpaper.repo\t%s\n' "$(wallpaper_dir)"
+    printf 'wallpaper.running\t%s\n' "$running"
+    printf 'wallpaper.theme\t%s\n' "$theme"
+    printf 'wallpaper.theme_name\t%s\n' "$name"
+    printf 'wallpaper.panel\t%s\n' "$(wallpaper_pref showPanel 1)"
+    printf 'wallpaper.clock\t%s\n' "$(wallpaper_pref showClock 1)"
+    printf 'wallpaper.name\t%s\n' "$(wallpaper_pref showThemeName 1)"
+    printf 'wallpaper.rotate\t%s\n' "$(wallpaper_pref rotateMinutes 0)"
+    return 0
+  fi
+
+  if [ -z "$app" ]; then
+    printf 'ASCII Wallpaper kurulu değil. Kurmak için: riceutil wallpaper install\n'
+    return 0
+  fi
+  printf 'Uygulama:   %s\n' "$app"
+  printf 'Durum:      %s\n' "$(if [ "$running" = 1 ]; then printf 'çalışıyor'; else printf 'kapalı'; fi)"
+  printf 'Tema:       %s (%s)\n' "${name:-?}" "$theme"
+  printf 'Panel:      %s\n' "$(on_off "$(wallpaper_pref showPanel 1)")"
+  printf 'Saat:       %s\n' "$(on_off "$(wallpaper_pref showClock 1)")"
+  printf 'Tema adı:   %s\n' "$(on_off "$(wallpaper_pref showThemeName 1)")"
+  printf 'Sırayla:    %s\n' "$(rotate="$(wallpaper_pref rotateMinutes 0)"; if [ "$rotate" = 0 ]; then printf 'kapalı'; else printf 'her %s dakikada' "$rotate"; fi)"
+}
+
+wallpaper_command() {
+  local sub="${1:-status}"
+
+  [ "$#" -gt 0 ] && shift
+  case "$sub" in
+    status)
+      [ "$#" -le 1 ] || fail "wallpaper status en fazla --tsv alır."
+      wallpaper_status "$@"
+      ;;
+    install|update)
+      wallpaper_install "$@"
+      ;;
+    start)
+      wallpaper_start
+      ;;
+    stop)
+      wallpaper_stop
+      ;;
+    restart)
+      wallpaper_stop
+      wallpaper_start
+      ;;
+    themes)
+      [ "$#" -le 1 ] || fail "wallpaper themes en fazla --tsv alır."
+      wallpaper_themes "$@"
+      ;;
+    theme)
+      if [ "$#" -eq 0 ]; then
+        wallpaper_status | sed -n 's/^Tema: *//p'
+      else
+        [ "$#" -eq 1 ] || fail "Kullanım: riceutil wallpaper theme <kimlik>"
+        wallpaper_set_theme "$1"
+      fi
+      ;;
+    next)
+      wallpaper_next
+      ;;
+    panel|clock|name)
+      [ "$#" -eq 1 ] || fail "Kullanım: riceutil wallpaper $sub on|off"
+      local value
+      value="$(parse_switch "$1")" || exit 1
+      case "$sub" in
+        panel) wallpaper_apply panel "$value" showPanel bool ;;
+        clock) wallpaper_apply clock "$value" showClock bool ;;
+        name) wallpaper_apply name "$value" showThemeName bool ;;
+      esac
+      printf '%s: %s\n' "$sub" "$(on_off "$value")"
+      ;;
+    rotate)
+      [ "$#" -eq 1 ] || fail "Kullanım: riceutil wallpaper rotate <dakika> (0 = kapalı)"
+      case "$1" in
+        ''|*[!0-9]*) fail "Dakika sayı olmalı: $1" ;;
+      esac
+      wallpaper_apply rotate "$1" rotateMinutes int
+      if [ "$1" -eq 0 ]; then printf 'Sırayla değiştirme kapalı.\n'; else printf 'Tema her %s dakikada değişecek.\n' "$1"; fi
+      ;;
+    saver)
+      wallpaper_saver
+      ;;
+    help|-h|--help)
+      print_usage
+      ;;
+    *)
+      fail "bilinmeyen wallpaper komutu: $sub (yardım: riceutil help)"
+      ;;
+  esac
+}
+
+# ---- GUI, durum ve config yolları ----
+
+find_gui_app() {
+  local candidate
+
+  for candidate in "${RICEUTIL_GUI_APP:-}" "$HOME/Applications/$GUI_APP_NAME" "/Applications/$GUI_APP_NAME"; do
+    if [ -n "$candidate" ] && [ -d "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+open_gui() {
+  local app
+
+  app="$(find_gui_app)" || fail "Riceutil GUI kurulu değil. riceutil-macos klasöründe ./install.sh çalıştır."
+  open "$app"
+}
+
+tool_status() {
+  local name="$1"
+  local tsv="$2"
+  local path=""
+  local version=""
+  local running=0
+
+  if path="$(command -v "$name" 2>/dev/null)"; then
+    version="$("$name" --version 2>&1 | sed -n '1p')" || version=""
+  else
+    path=""
+  fi
+  pgrep -x "$name" >/dev/null 2>&1 && running=1
+
+  if [ "$tsv" = 1 ]; then
+    printf '%s.path\t%s\n' "$name" "$path"
+    printf '%s.version\t%s\n' "$name" "$version"
+    printf '%s.running\t%s\n' "$name" "$running"
+  elif [ -z "$path" ]; then
+    printf '%-10s kurulu değil\n' "$name"
+  elif [ "$name" = brew ]; then
+    printf '%-10s %s\n' "$name" "$version"
+  else
+    printf '%-10s %s, %s\n' "$name" "$version" "$(if [ "$running" = 1 ]; then printf 'çalışıyor'; else printf 'çalışmıyor'; fi)"
+  fi
+}
+
+status() {
+  local tsv=0
+
+  [ "${1:-}" = "--tsv" ] && tsv=1
+  tool_status yabai "$tsv"
+  tool_status skhd "$tsv"
+  tool_status brew "$tsv"
+  if [ "$tsv" = 1 ]; then
+    printf 'binds.path\t%s\n' "$(resolve_skhd_config)"
+    printf 'wm.path\t%s\n' "$(resolve_yabai_config)"
+    printf 'gui.app\t%s\n' "$(find_gui_app || true)"
+    printf 'version\t%s\n' "$VERSION"
+    wallpaper_status --tsv
+  else
+    printf '\nASCII Wallpaper\n'
+    wallpaper_status
+  fi
 }
 
 case "${1:-help}" in
@@ -269,6 +695,26 @@ case "${1:-help}" in
   update)
     [ "$#" -eq 1 ] || fail "update ek argüman kabul etmiyor."
     update_homebrew
+    ;;
+  status)
+    [ "$#" -le 2 ] || fail "status en fazla --tsv alır."
+    shift
+    status "$@"
+    ;;
+  wallpaper|wp)
+    shift
+    wallpaper_command "$@"
+    ;;
+  gui)
+    [ "$#" -eq 1 ] || fail "gui ek argüman kabul etmiyor."
+    open_gui
+    ;;
+  path)
+    case "${2:-}" in
+      binds) resolve_skhd_config ;;
+      wm) resolve_yabai_config ;;
+      *) fail "Kullanım: riceutil path binds|wm" ;;
+    esac
     ;;
   help|-h|--help)
     print_usage
