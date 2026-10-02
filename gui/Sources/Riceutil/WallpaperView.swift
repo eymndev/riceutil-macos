@@ -1,0 +1,120 @@
+import SwiftUI
+
+struct WallpaperView: View {
+    @EnvironmentObject private var model: AppModel
+
+    private let columns = [GridItem(.adaptive(minimum: 170), spacing: 10)]
+    private let rotations = [(0, "Kapalı"), (10, "10 dakika"), (30, "30 dakika"), (60, "1 saat")]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                header
+                if model.wallpaperInstalled {
+                    settings
+                    themeGrid
+                }
+                if !model.log.isEmpty {
+                    LogView(text: model.log).frame(minHeight: 180, maxHeight: 320)
+                }
+            }
+            .padding(20)
+        }
+    }
+
+    private var header: some View {
+        Card(title: "ASCII Wallpaper", symbol: "photo.on.rectangle") {
+            if model.wallpaperInstalled {
+                StatusBadge(on: model.wallpaperRunning, text: model.wallpaperRunning ? "Çalışıyor" : "Kapalı")
+                Text(model.value("wallpaper.app"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            } else {
+                Text("Henüz kurulu değil. Kur'a basınca depo indirilir, derlenir ve ~/Applications içine kurulur (Xcode Command Line Tools gerekir).")
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                if model.wallpaperInstalled {
+                    if model.wallpaperRunning {
+                        Button("Durdur") { Task { await model.stopWallpaper() } }
+                        Button("Yeniden başlat") { Task { await model.restartWallpaper() } }
+                    } else {
+                        Button("Başlat") { Task { await model.startWallpaper() } }
+                            .keyboardShortcut(.defaultAction)
+                    }
+                    Button("Güncelle") { Task { await model.stream("Güncelleniyor", ["wallpaper", "update"]) } }
+                    Button("Ekran koruyucuyu kur") { Task { await model.stream("Ekran koruyucu", ["wallpaper", "saver"]) } }
+                } else {
+                    Button("Kur") { Task { await model.stream("Kuruluyor", ["wallpaper", "install"]) } }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .disabled(model.busy != nil)
+        }
+    }
+
+    private var settings: some View {
+        Card(title: "Görünüm", symbol: "slider.horizontal.3") {
+            Toggle("Sistem paneli", isOn: binding("panel", key: "wallpaper.panel"))
+            Toggle("Saat", isOn: binding("clock", key: "wallpaper.clock"))
+            Toggle("Köşede tema adı", isOn: binding("name", key: "wallpaper.name"))
+            Picker("Temaları sırayla değiştir", selection: Binding(
+                get: { model.rotateMinutes },
+                set: { minutes in Task { await model.setRotation(minutes) } }
+            )) {
+                ForEach(rotations, id: \.0) { option in
+                    Text(option.1).tag(option.0)
+                }
+            }
+            .frame(maxWidth: 360)
+        }
+    }
+
+    private var themeGrid: some View {
+        Card(title: "Tema", symbol: "paintpalette") {
+            HStack {
+                Text("Tıklayınca hemen değişir.").foregroundStyle(.secondary)
+                Spacer()
+                Button("Sonraki tema") { Task { await model.nextTheme() } }
+            }
+            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                ForEach(model.themes) { theme in
+                    ThemeButton(theme: theme, selected: theme.id == model.currentTheme) {
+                        Task { await model.setTheme(theme.id) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func binding(_ name: String, key: String) -> Binding<Bool> {
+        Binding(
+            get: { model.flag(key) },
+            set: { on in Task { await model.setSwitch(name, on) } }
+        )
+    }
+}
+
+private struct ThemeButton: View {
+    let theme: WallpaperTheme
+    let selected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(theme.name).font(.body.weight(selected ? .semibold : .regular))
+                Text(theme.id).font(.caption.monospaced()).foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(selected ? Color.accentColor.opacity(0.18) : Color.secondary.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? Color.accentColor : Color.clear, lineWidth: 1.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+}
