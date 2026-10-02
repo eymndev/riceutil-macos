@@ -41,11 +41,6 @@ jobs:
             echo "::warning::Wallpaper deposu herkese açık değil; uçtan uca duvar kağıdı testi atlandı."
             exit 0
           fi
-          # Entegrasyon dalı henüz birleşmediyse onu kullan
-          branch=claude/riceutil-integration-gui-j3ldgp
-          if git ls-remote --exit-code --heads "$repo" "$branch" >/dev/null 2>&1; then
-            export RICEUTIL_WALLPAPER_REF="$branch"
-          fi
           riceutil wallpaper install --no-saver
           sleep 8
           riceutil wallpaper

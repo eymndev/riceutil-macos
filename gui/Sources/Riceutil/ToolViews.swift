@@ -4,21 +4,38 @@ import SwiftUI
 struct ConfigsView: View {
     @EnvironmentObject private var model: AppModel
 
+    private let modes = [("mac", "macOS"), ("yabai", "yabai"), ("stage-manager", "Stage Manager")]
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                row(kind: "binds", title: "skhd kısayolları", symbol: "command")
-                row(kind: "wm", title: "yabai pencere yöneticisi", symbol: "rectangle.split.3x1")
-                Text("Terminalde aç, `riceutil binds` / `riceutil wm` ile aynıdır (Vim ya da RICEUTIL_EDITOR). Değişiklikten sonra servisi yeniden başlatman gerekebilir.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                row(kind: "binds", title: "skhd kısayolları", symbol: "command", reload: "binds")
+                row(kind: "wm", title: "yabai pencere yöneticisi", symbol: "rectangle.split.3x1", reload: "wm")
+                Card(title: "Pencere yöneticisi modu", symbol: "macwindow.on.rectangle") {
+                    Text("macOS ve Stage Manager modları yabai'yi durdurur; Stage Manager değişince Dock kısa süre yeniden başlar.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack {
+                        ForEach(modes, id: \.0) { mode in
+                            Button(mode.1) { Task { await model.stream("Mod: \(mode.1)", ["wm", "mode", mode.0]) } }
+                        }
+                        Spacer()
+                        Button("skhd ve yabai'yi yeniden yükle") { Task { await model.stream("Yeniden yükleniyor", ["reload"]) } }
+                    }
+                    .disabled(model.busy != nil)
+                }
+                row(kind: "kitty", title: "Kitty", symbol: "terminal", reload: nil)
+                row(kind: "zsh", title: "Zsh", symbol: "chevron.left.forwardslash.chevron.right", reload: nil)
+                if !model.log.isEmpty {
+                    LogView(text: model.log).frame(minHeight: 140, maxHeight: 260)
+                }
             }
             .padding(20)
         }
     }
 
-    private func row(kind: String, title: String, symbol: String) -> some View {
+    private func row(kind: String, title: String, symbol: String, reload: String?) -> some View {
         let path = model.configPath(kind)
         let exists = !path.isEmpty && FileManager.default.fileExists(atPath: path)
         return Card(title: title, symbol: symbol) {
@@ -32,6 +49,10 @@ struct ConfigsView: View {
                 Button("Terminalde aç") { model.openInTerminal(kind) }
                 Button("Düzenleyicide aç") { model.openInEditor(kind) }
                 Button("Finder'da göster") { model.revealInFinder(kind) }.disabled(!exists)
+                if let reload {
+                    Button("Yeniden yükle") { Task { await model.stream("Yeniden yükleniyor", [reload, "reload"]) } }
+                        .disabled(model.busy != nil)
+                }
             }
         }
     }

@@ -99,13 +99,14 @@ final class AppModel: ObservableObject {
 
     // MARK: Config dosyaları
 
-    /// kind: "binds" (skhd) ya da "wm" (yabai)
+    /// kind: "binds" (skhd), "wm" (yabai), "kitty" ya da "zsh"
     func configPath(_ kind: String) -> String { value("\(kind).path") }
 
-    /// riceutil binds/wm komutunu Terminal'de çalıştırır (Vim ya da RICEUTIL_EDITOR).
+    /// Config'i açan riceutil komutunu Terminal'de çalıştırır (Vim ya da RICEUTIL_EDITOR).
     func openInTerminal(_ kind: String) {
+        let command = kind == "binds" || kind == "wm" ? "\(kind) config" : kind
         let script = FileManager.default.temporaryDirectory.appendingPathComponent("riceutil-\(kind).command")
-        let body = "#!/bin/bash\nexport PATH=\(shellQuote(Runner.environment["PATH"] ?? ""))\nexec /bin/bash \(shellQuote(Runner.scriptPath)) \(kind)\n"
+        let body = "#!/bin/bash\nexport PATH=\(shellQuote(Runner.environment["PATH"] ?? ""))\nexec /bin/bash \(shellQuote(Runner.scriptPath)) \(command)\n"
         do {
             try body.write(to: script, atomically: true, encoding: .utf8)
             try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)

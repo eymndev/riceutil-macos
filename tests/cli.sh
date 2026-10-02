@@ -9,6 +9,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
 export HOME="$WORK/home"
+unset XDG_CONFIG_HOME XDG_DATA_HOME KITTY_CONFIG_DIRECTORY ZDOTDIR RICEUTIL_SKHD_CONFIG RICEUTIL_YABAI_CONFIG RICEUTIL_KITTY_CONFIG RICEUTIL_ZSH_CONFIG RICEUTIL_WALLPAPER_DIR RICEUTIL_WALLPAPER_APP RICEUTIL_GUI_APP
 STUBS="$WORK/bin"
 LOG="$WORK/log"
 PREFS="$WORK/prefs"
@@ -83,6 +84,10 @@ check "durum --tsv" '"$R" wallpaper status --tsv | grep -q "^wallpaper.running	1
 check "stop uygulamayı kapatır" '"$R" wallpaper stop >/dev/null && ! [ -f "$PREFS/RUNNING" ]'
 check "genel durum --tsv duvar kağıdını içerir" '"$R" status --tsv | grep -q "^wallpaper.theme	"'
 check "path binds" '[ "$("$R" path binds)" = "$HOME/.skhdrc" ]'
+check "path kitty" '[ "$("$R" path kitty)" = "$HOME/.config/kitty/kitty.conf" ]'
+check "binds alt komutları gösterir" '"$R" binds | grep -q "binds config"'
+check "wm mode modları gösterir" '"$R" wm mode | grep -q "stage-manager"'
+check "help kitty ve wallpaper içerir" '"$R" help | grep -q "riceutil kitty" && "$R" help | grep -q "riceutil wallpaper"'
 check "gui kurulu değilse yol gösterir" '"$R" gui 2>&1 | grep -q install.sh'
 
 [ "$fails" -eq 0 ] || { printf '%s test başarısız\n' "$fails"; exit 1; }
