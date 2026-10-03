@@ -1,8 +1,16 @@
 import AppKit
 import SwiftUI
 
+private struct EditTarget: Identifiable {
+    let kind: String
+    let title: String
+    let reload: String?
+    var id: String { kind }
+}
+
 struct ConfigsView: View {
     @EnvironmentObject private var model: AppModel
+    @State private var editing: EditTarget?
 
     private let modes = [("mac", "macOS"), ("yabai", "yabai"), ("stage-manager", "Stage Manager")]
 
@@ -33,6 +41,10 @@ struct ConfigsView: View {
             }
             .padding(20)
         }
+        .sheet(item: $editing) { target in
+            ConfigEditorSheet(kind: target.kind, title: target.title, reload: target.reload)
+                .environmentObject(model)
+        }
     }
 
     private func row(kind: String, title: String, symbol: String, reload: String?) -> some View {
@@ -43,11 +55,12 @@ struct ConfigsView: View {
                 .font(.system(.callout, design: .monospaced))
                 .textSelection(.enabled)
             if !exists {
-                Text("Dosya henüz yok, açınca oluşturulur.").font(.caption).foregroundStyle(.secondary)
+                Text("Dosya henüz yok, kaydedince oluşturulur.").font(.caption).foregroundStyle(.secondary)
             }
             HStack {
+                Button("Düzenle") { editing = EditTarget(kind: kind, title: title, reload: reload) }
+                    .disabled(path.isEmpty)
                 Button("Terminalde aç") { model.openInTerminal(kind) }
-                Button("Düzenleyicide aç") { model.openInEditor(kind) }
                 Button("Finder'da göster") { model.revealInFinder(kind) }.disabled(!exists)
                 if let reload {
                     Button("Yeniden yükle") { Task { await model.stream("Yeniden yükleniyor", [reload, "reload"]) } }

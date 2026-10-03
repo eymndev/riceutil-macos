@@ -1,9 +1,10 @@
+import AppKit
 import SwiftUI
 
 struct WallpaperView: View {
     @EnvironmentObject private var model: AppModel
 
-    private let columns = [GridItem(.adaptive(minimum: 170), spacing: 10)]
+    private let columns = [GridItem(.adaptive(minimum: 210), spacing: 12)]
     private let rotations = [(0, "Kapalı"), (10, "10 dakika"), (30, "30 dakika"), (60, "1 saat")]
 
     var body: some View {
@@ -81,7 +82,7 @@ struct WallpaperView: View {
             }
             LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
                 ForEach(model.themes) { theme in
-                    ThemeButton(theme: theme, selected: theme.id == model.currentTheme) {
+                    ThemeButton(theme: theme, preview: model.preview(for: theme.id), selected: theme.id == model.currentTheme) {
                         Task { await model.setTheme(theme.id) }
                     }
                 }
@@ -99,14 +100,16 @@ struct WallpaperView: View {
 
 private struct ThemeButton: View {
     let theme: WallpaperTheme
+    let preview: NSImage?
     let selected: Bool
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 2) {
-                Text(theme.name).font(.body.weight(selected ? .semibold : .regular))
+                Text(theme.name).font(.body.weight(selected ? .semibold : .regular)).lineLimit(1)
                 Text(theme.id).font(.caption.monospaced()).foregroundStyle(.secondary)
+                previewImage.padding(.top, 6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
@@ -116,5 +119,25 @@ private struct ThemeButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .help(theme.name)
+    }
+
+    /// Ekran oranında (16:10) küçük görsel; önizleme yoksa (eski kurulum) düz bir kutu
+    private var previewImage: some View {
+        Color.black
+            .aspectRatio(16 / 10, contentMode: .fit)
+            .overlay {
+                if let preview {
+                    Image(nsImage: preview).resizable().scaledToFill()
+                } else {
+                    Text("Önizleme için duvar kağıdını güncelle")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .padding(6)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 5))
+            .overlay(RoundedRectangle(cornerRadius: 5).stroke(Color.secondary.opacity(0.25)))
     }
 }
