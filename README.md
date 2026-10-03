@@ -76,8 +76,8 @@ export RICEUTIL_WALLPAPER_DIR="$HOME/kod/Wallpaper"
 `riceutil gui` ya da Uygulamalar'dan Riceutil. Bölümler:
 
 - **Genel**: yabai, skhd, Homebrew ve duvar kağıdının durumu
-- **Duvar Kağıdı**: kur/güncelle, başlat/durdur, tıklayınca değişen tema listesi, panel/saat/tema adı ve sırayla değiştirme ayarları, ekran koruyucu kurulumu
-- **Config ve WM**: skhd, yabai, Kitty ve Zsh config'lerini Terminal'de (Vim) ya da varsayılan düzenleyicide açma, skhd/yabai'yi yeniden yükleme, pencere yöneticisi modu (macOS / yabai / Stage Manager)
+- **Duvar Kağıdı**: kur/güncelle, başlat/durdur, önizlemeli ve tıklayınca değişen tema listesi, panel/saat/tema adı ve sırayla değiştirme ayarları, ekran koruyucu kurulumu
+- **Config ve WM**: skhd, yabai, Kitty ve Zsh config'lerini uygulamanın içinde düz metin olarak düzenleme (eş aralıklı yazı, akıllı tırnak ve otomatik düzeltme yok, her zaman UTF-8 düz metin kaydeder) ya da Terminal'de (Vim) açma, skhd/yabai'yi yeniden yükleme, pencere yöneticisi modu (macOS / yabai / Stage Manager)
 - **Tanılama**: `riceutil doctor` çıktısı, kopyalama ve dosyaya kaydetme
 - **Homebrew**: `brew update` ve `brew upgrade`, çıktısı canlı akar
 

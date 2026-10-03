@@ -27,6 +27,27 @@ final class AppModel: ObservableObject {
     var currentTheme: String { value("wallpaper.theme") }
     var rotateMinutes: Int { Int(value("wallpaper.rotate")) ?? 0 }
 
+    private var previewCache: [String: NSImage] = [:]
+
+    /// Temanın önizlemesi: kurulu uygulamanın ya da Wallpaper deposunun web/previews/<tema>.jpg dosyası
+    func preview(for id: String) -> NSImage? {
+        if let image = previewCache[id] { return image }
+        var dirs: [URL] = []
+        if !value("wallpaper.app").isEmpty {
+            dirs.append(URL(fileURLWithPath: value("wallpaper.app")).appendingPathComponent("Contents/Resources/web/previews"))
+        }
+        if !value("wallpaper.repo").isEmpty {
+            dirs.append(URL(fileURLWithPath: value("wallpaper.repo")).appendingPathComponent("web/previews"))
+        }
+        for dir in dirs {
+            if let image = NSImage(contentsOf: dir.appendingPathComponent("\(id).jpg")) {
+                previewCache[id] = image
+                return image
+            }
+        }
+        return nil
+    }
+
     func refresh() async {
         let result = await Runner.run(["status", "--tsv"])
         status = Runner.parsePairs(result.output)
@@ -63,6 +84,7 @@ final class AppModel: ObservableObject {
         }
         log += status == 0 ? "\n✓ Bitti.\n" : "\n✗ Çıkış kodu \(status).\n"
         busy = nil
+        previewCache = [:] // kurulum/güncelleme yeni önizlemeler getirmiş olabilir
         await refresh()
     }
 
@@ -114,20 +136,6 @@ final class AppModel: ObservableObject {
         } catch {
             lastError = error.localizedDescription
         }
-    }
-
-    /// Dosyayı varsayılan metin düzenleyicisinde açar; yoksa boş olarak oluşturur.
-    func openInEditor(_ kind: String) {
-        let path = configPath(kind)
-        guard !path.isEmpty else { return }
-        let url = URL(fileURLWithPath: path)
-        if !FileManager.default.fileExists(atPath: path) {
-            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            FileManager.default.createFile(atPath: path, contents: Data())
-        }
-        let editor = NSWorkspace.shared.urlForApplication(toOpen: url)
-            ?? URL(fileURLWithPath: "/System/Applications/TextEdit.app")
-        NSWorkspace.shared.open([url], withApplicationAt: editor, configuration: NSWorkspace.OpenConfiguration())
     }
 
     func revealInFinder(_ kind: String) {

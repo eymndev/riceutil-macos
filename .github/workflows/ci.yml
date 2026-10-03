@@ -45,6 +45,8 @@ jobs:
           sleep 8
           riceutil wallpaper
           riceutil wallpaper themes
+          # GUI'nin tema kartlarındaki önizlemeler kurulu uygulamanın içinden okunur
+          test -f "$(riceutil status --tsv | awk -F'\t' '$1=="wallpaper.app"{print $2}')/Contents/Resources/web/previews/lake.jpg"
           riceutil wallpaper theme fire
           sleep 1
           test "$(defaults read dev.eymn.ascii-wallpaper theme)" = fire
