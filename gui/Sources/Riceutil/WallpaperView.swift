@@ -13,6 +13,7 @@ struct WallpaperView: View {
                 header
                 if model.wallpaperInstalled {
                     settings
+                    packList
                     themeGrid
                 }
                 if !model.log.isEmpty {
@@ -73,6 +74,57 @@ struct WallpaperView: View {
         }
     }
 
+    /// Klasik temalar uygulamayla gelir; Hyprland, Anime gibi paketler ayrı indirilir ve kaldırılabilir
+    private var packList: some View {
+        Card(title: "Tema paketleri", symbol: "shippingbox") {
+            if model.packs.isEmpty {
+                Text("Paketleri görmek için duvar kağıdını güncelle.")
+                    .foregroundStyle(.secondary)
+            }
+            ForEach(model.packs) { pack in
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pack.name).font(.body.weight(.semibold))
+                        Text("\(pack.themeCount) tema · \(pack.summary)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer()
+                    switch pack.state {
+                    case .builtin:
+                        Text("Dahili").foregroundStyle(.secondary)
+                    case .installed:
+                        Label("Kurulu", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Button("Kaldır") { Task { await model.removePack(pack.id) } }
+                    case .available:
+                        Button("İndir") { Task { await model.addPack(pack.id) } }
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+        }
+        .disabled(model.busy != nil)
+    }
+
+    private struct ThemeGroup: Identifiable {
+        let id: String // paket
+        var themes: [WallpaperTheme]
+    }
+
+    /// Temalar paketlerine göre gruplanır (Klasik, sonra kurulu paketler)
+    private var themeGroups: [ThemeGroup] {
+        var groups: [ThemeGroup] = []
+        for theme in model.themes {
+            if let i = groups.firstIndex(where: { $0.id == theme.pack }) {
+                groups[i].themes.append(theme)
+            } else {
+                groups.append(ThemeGroup(id: theme.pack, themes: [theme]))
+            }
+        }
+        return groups
+    }
+
     private var themeGrid: some View {
         Card(title: "Tema", symbol: "paintpalette") {
             HStack {
@@ -80,10 +132,16 @@ struct WallpaperView: View {
                 Spacer()
                 Button("Sonraki tema") { Task { await model.nextTheme() } }
             }
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
-                ForEach(model.themes) { theme in
-                    ThemeButton(theme: theme, preview: model.preview(for: theme.id), selected: theme.id == model.currentTheme) {
-                        Task { await model.setTheme(theme.id) }
+            let groups = themeGroups
+            ForEach(groups) { group in
+                if groups.count > 1 {
+                    Text(model.packName(group.id)).font(.subheadline.weight(.semibold)).padding(.top, 6)
+                }
+                LazyVGrid(columns: columns, alignment: .leading, spacing: 10) {
+                    ForEach(group.themes) { theme in
+                        ThemeButton(theme: theme, preview: model.preview(for: theme), selected: theme.id == model.currentTheme) {
+                            Task { await model.setTheme(theme.id) }
+                        }
                     }
                 }
             }

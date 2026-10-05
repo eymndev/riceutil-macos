@@ -69,7 +69,7 @@ mkdir -p "$APP/Contents/Resources/web"
 printf 'lake\tGece Gölü\nmatrix\tMatrix\nfire\tŞömine\n' >"$APP/Contents/Resources/web/themes.tsv"
 
 check "temalar listelenir, etkin tema işaretli" '"$R" wallpaper themes | grep -q "^\* lake"'
-check "--tsv makine çıktısı" '[ "$("$R" wallpaper themes --tsv | sed -n 3p)" = "$(printf "fire\tŞömine\t0")" ]'
+check "--tsv makine çıktısı" '[ "$("$R" wallpaper themes --tsv | sed -n 3p)" = "$(printf "fire\tŞömine\t0\tklasik")" ]'
 check "bilinmeyen tema reddedilir" '! "$R" wallpaper theme yok 2>/dev/null'
 check "kapalıyken tema ayara yazılır" '"$R" wallpaper theme fire >/dev/null && [ "$(cat "$PREFS/theme")" = fire ]'
 check "kapalıyken sonraki tema baştan döner" '"$R" wallpaper next | grep -q "Gece Gölü (lake)"'
@@ -82,6 +82,30 @@ check "çalışırken panel bildirimle" '"$R" wallpaper panel off >/dev/null && 
 check "durum çalışıyor der" '"$R" wallpaper status | grep -q "çalışıyor"'
 check "durum --tsv" '"$R" wallpaper status --tsv | grep -q "^wallpaper.running	1$"'
 check "stop uygulamayı kapatır" '"$R" wallpaper stop >/dev/null && ! [ -f "$PREFS/RUNNING" ]'
+# Tema paketleri: katalog uygulamada, kurulu paketler ~/Library/Application Support/ASCII Wallpaper/packs altında
+printf 'klasik\tKlasik\t1\t3\tdahili\nanime\tAnime\t0\t2\tDeath Note\nhyprland\tHyprland\t0\t9\tHypr\n' >"$APP/Contents/Resources/web/packs.tsv"
+PACKS="$HOME/Library/Application Support/ASCII Wallpaper/packs"
+check "kurulu olmayan paketin teması yok" '! "$R" wallpaper theme light-yagami 2>/dev/null'
+mkdir -p "$PACKS/anime"
+printf 'misa-train\tMisa Train\nlight-yagami\tLight Yagami\n' >"$PACKS/anime/themes.tsv"
+check "kurulu paketin temaları listelenir" '"$R" wallpaper themes --tsv | grep -q "^light-yagami	Light Yagami	0	anime$"'
+check "kurulu paketin teması seçilir" '"$R" wallpaper theme light-yagami | grep -q "Light Yagami"'
+check "sonraki tema paketten Klasik'e döner" '"$R" wallpaper next | grep -q "Gece Gölü (lake)"'
+check "durum --tsv paket klasörünü verir" '"$R" wallpaper status --tsv | grep -q "^wallpaper.packs_dir	$PACKS$"'
+check "depo yokken paket komutu yol gösterir" '"$R" wallpaper pack add anime 2>&1 | grep -q "wallpaper install"'
+REPO="$HOME/.local/share/riceutil/Wallpaper"
+mkdir -p "$REPO/.git" "$REPO/scripts"
+check "eski depoda paket komutu güncelleme ister" '"$R" wallpaper packs 2>&1 | grep -q "wallpaper update"'
+cat >"$REPO/scripts/pack.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "pack $* [$AW_PACKS_DIR]" >>"$LOG"
+STUB
+chmod +x "$REPO/scripts/pack.sh"
+check "packs pack.sh list'i çağırır" '"$R" wallpaper packs --tsv && grep -q "^pack list --tsv \[$PACKS\]$" "$LOG"'
+check "pack add pack.sh add'i çağırır" '"$R" wallpaper pack add anime hyprland && grep -q "^pack add anime hyprland " "$LOG"'
+check "pack remove pack.sh remove'u çağırır" '"$R" wallpaper pack remove hyprland && grep -q "^pack remove hyprland " "$LOG"'
+check "pack add paket ister" '! "$R" wallpaper pack add 2>/dev/null'
+
 check "genel durum --tsv duvar kağıdını içerir" '"$R" status --tsv | grep -q "^wallpaper.theme	"'
 check "path binds" '[ "$("$R" path binds)" = "$HOME/.skhdrc" ]'
 check "path kitty" '[ "$("$R" path kitty)" = "$HOME/.config/kitty/kitty.conf" ]'

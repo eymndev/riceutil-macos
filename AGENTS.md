@@ -4,7 +4,7 @@ Bu depoda çalışacak geliştiriciler ve kodlama agent'ları (Codex, Claude vb.
 
 ## Proje özeti
 
-`yabai`, `skhd`, Kitty, Zsh, Homebrew ve [ASCII Wallpaper](https://github.com/eymndev/Wallpaper) için macOS yardımcısı: tek dosyalık bir Bash komutu (`riceutil`, sürüm `VERSION` değişkeninde, şu an 1.5.0) ve aynı işleri yapan bir SwiftUI uygulaması (Riceutil GUI). Eymen Yıldırım'ın kendi projesi; sonradan eklenen duvar kağıdı komutları ve GUI AI (Claude) yardımıyla yazıldı. Proje "tamamen AI Generated" olarak etiketlenmez.
+`yabai`, `skhd`, Kitty, Zsh, Homebrew ve [ASCII Wallpaper](https://github.com/eymndev/Wallpaper) için macOS yardımcısı: tek dosyalık bir Bash komutu (`riceutil`, sürüm `VERSION` değişkeninde, şu an 1.6.0) ve aynı işleri yapan bir SwiftUI uygulaması (Riceutil GUI). Eymen Yıldırım'ın kendi projesi; sonradan eklenen duvar kağıdı komutları ve GUI AI (Claude) yardımıyla yazıldı. Proje "tamamen AI Generated" olarak etiketlenmez.
 
 ## Dizin yapısı
 
@@ -29,7 +29,8 @@ Swift kodu Linux/bulut ortamında derlenemez; GUI değişiklikleri yalnızca mac
 
 ## Kalıcı kurallar ve mimari kararlar
 
-- **Duvar kağıdıyla iletişim:** `riceutil wallpaper` ayarı `dev.eymn.ascii-wallpaper` UserDefaults alanına yazar ve çalışan uygulamaya `dev.eymn.ascii-wallpaper.command` dağıtık bildirimini `osascript -l JavaScript` ile gönderir (userInfo değerleri string). Bildirimin `object`'i string olmalı (`"riceutil"`); JXA `null`'u NSNull yapıp uygulamayı çökertir. Tema listesi kurulu uygulamanın içindeki `web/themes.tsv`'den, GUI tema önizlemeleri `web/previews/<kimlik>.jpg`'den okunur.
+- **Duvar kağıdıyla iletişim:** `riceutil wallpaper` ayarı `dev.eymn.ascii-wallpaper` UserDefaults alanına yazar ve çalışan uygulamaya `dev.eymn.ascii-wallpaper.command` dağıtık bildirimini `osascript -l JavaScript` ile gönderir (userInfo değerleri string). Bildirimin `object`'i string olmalı (`"riceutil"`); JXA `null`'u NSNull yapıp uygulamayı çökertir. Tema listesi kurulu uygulamanın içindeki `web/themes.tsv` (Klasik) ile kurulu paketlerin `themes.tsv`'lerinden (katalog `web/packs.tsv` sırasıyla), GUI tema önizlemeleri Klasik için `web/previews/<kimlik>.jpg`'den, paket temaları için `<paket klasörü>/<paket>/previews/<kimlik>.jpg`'den okunur.
+- **Tema paketleri:** Klasik temalar uygulamayla gelir; Hyprland, Anime gibi paketler `~/Library/Application Support/ASCII Wallpaper/packs/<paket>/` içine kurulur. `riceutil wallpaper packs|pack add|pack remove` işi Wallpaper deposunun `scripts/pack.sh` betiğine bırakır (`AW_PACKS_DIR` ile klasörü verir). Yeni klon seyrek ve `--filter=blob:none` yapılır (`sparse-checkout set web mac scripts`); `pack.sh add` paketi `git sparse-checkout add` ile o an indirir. Git bunu desteklemezse tam klona düşülür.
 - Wallpaper deposu varsayılan olarak `~/.local/share/riceutil/Wallpaper` içine klonlanır (`RICEUTIL_WALLPAPER_DIR`, `RICEUTIL_WALLPAPER_REPO`, `RICEUTIL_WALLPAPER_REF` ile değişir); kurulum Wallpaper'ın `scripts/install.sh` betiğiyle yapılır.
 - **Config dosyalarını TextEdit veya varsayılan uygulamayla açma.** TextEdit dosyayı RTF olarak kaydedebilir. GUI config'leri uygulamanın içinde düz metin olarak düzenler ve her zaman UTF-8 düz metin kaydeder; komut satırı `RICEUTIL_EDITOR` (varsayılan `vim`) kullanır.
 - Yeni ortam değişkeni veya alt komut eklenirse `print_usage`, `README.md` ve gerekiyorsa `tests/cli.sh` güncellenir.
@@ -193,3 +194,32 @@ Kullanıcının "Codex Proje Çalışma Talimatları"na uygun bir `AGENTS.md` ol
 
 #### Bilinen sorunlar ve sonraki adımlar
 - Yukarıdaki "Bilinen sorunlar" bölümüne bak.
+
+### 2026-10-05 — Duvar kağıdı tema paketleri
+
+#### Amaç
+Kullanıcı isteği: duvar kağıdı temaları paketlere ayrılsın (Anime, Hyprland ...) ve ayrı ayrı indirilebilsin; hepsini bir kerede indirmek zorunda kalınmasın. Wallpaper tarafı (paket yapısı, `scripts/pack.sh`, uygulama ve ekran koruyucuda yükleme) aynı adlı Wallpaper PR'ında; burada riceutil komutları ve GUI.
+
+#### Yapılanlar
+- `riceutil`: `wallpaper packs [--tsv]`, `wallpaper pack add|remove <paket>...` (Wallpaper'ın `scripts/pack.sh`'ına bırakır). Tema listesi Klasik + kurulu paketlerden derlenir; `themes --tsv` dördüncü sütunda paketi verir; `status --tsv` `wallpaper.packs_dir` verir. Yeni klon seyrek ve dosyasız. Sürüm 1.6.0.
+- `gui/Sources/Riceutil/AppModel.swift`, `WallpaperView.swift`: "Tema paketleri" kartı (İndir / Kaldır), temalar paketlerine göre gruplanır, paket temalarının önizlemesi paket klasöründen okunur.
+- `tests/cli.sh`: Paket temalarının listelenmesi/seçilmesi ve `pack.sh`'a doğru argümanlarla gidilmesi.
+- `.github/workflows/ci.yml`: Uçtan uca testte (depo herkese açıksa) Hypr teması paket kurulmadan reddedilir, `pack add hyprland` sonrası seçilir.
+- `README.md`: Paket komutları ve açıklaması.
+
+#### Hedef durumu
+- [x] Paket komutları ve GUI bölümü.
+- [ ] GUI'nin görünüşü ve gerçek seyrek klonla kurulum: macOS CI'da derlenir; uçtan uca test Wallpaper özel olduğu sürece atlanır, gerçek Mac'te `Doğrulanması gerekiyor`.
+
+#### Teknik kararlar
+- Paket mantığı Wallpaper deposunda (`scripts/pack.sh`) tutuldu: riceutil olmadan da çalışır, riceutil yalnız çağırır.
+- Seyrek klon yalnız yeni kurulumlarda yapılır; mevcut tam klonlar olduğu gibi kalır (zaten her şeyi indirmişler).
+- macOS'un bash 3.2'si `set -u` altında boş dizi açılımında hata verdiği için `${dizi[@]+"${dizi[@]}"}` kullanıldı.
+
+#### Testler
+- `./tests/cli.sh`: Tümü geçti.
+- `shellcheck riceutil install.sh scripts/*.sh tests/*.sh`: Temiz.
+- GUI yalnız macOS CI'da derlenir.
+
+#### Bilinen sorunlar ve sonraki adımlar
+- Yok.
