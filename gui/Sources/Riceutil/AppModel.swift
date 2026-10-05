@@ -5,6 +5,21 @@ import UniformTypeIdentifiers
 struct WallpaperTheme: Identifiable, Hashable {
     let id: String
     let name: String
+    /// Temanın paketi: "klasik" (uygulamanın içinde) ya da ayrı indirilen bir paket (hyprland, anime ...)
+    let pack: String
+}
+
+/// Duvar kağıdının tema paketi (riceutil wallpaper packs --tsv)
+struct WallpaperPack: Identifiable, Hashable {
+    enum State: String {
+        case builtin, installed, available
+    }
+
+    let id: String
+    let name: String
+    let state: State
+    let themeCount: Int
+    let summary: String
 }
 
 /// GUI'nin durumu. Her işlem riceutil komutuyla yapılır, sonra durum yeniden okunur.
@@ -12,6 +27,7 @@ struct WallpaperTheme: Identifiable, Hashable {
 final class AppModel: ObservableObject {
     @Published private(set) var status: [String: String] = [:]
     @Published private(set) var themes: [WallpaperTheme] = []
+    @Published private(set) var packs: [WallpaperPack] = []
     @Published private(set) var busy: String?
     @Published var log = ""
     @Published var doctorOutput = ""
@@ -29,23 +45,38 @@ final class AppModel: ObservableObject {
 
     private var previewCache: [String: NSImage] = [:]
 
-    /// Temanın önizlemesi: kurulu uygulamanın ya da Wallpaper deposunun web/previews/<tema>.jpg dosyası
-    func preview(for id: String) -> NSImage? {
-        if let image = previewCache[id] { return image }
+    /// Temanın önizlemesi: Klasik temalar için kurulu uygulamanın ya da Wallpaper deposunun web/previews/<tema>.jpg
+    /// dosyası, paketteki temalar için kurulu paketin (ya da depodaki paketin) previews/<tema>.jpg dosyası
+    func preview(for theme: WallpaperTheme) -> NSImage? {
+        if let image = previewCache[theme.id] { return image }
         var dirs: [URL] = []
-        if !value("wallpaper.app").isEmpty {
-            dirs.append(URL(fileURLWithPath: value("wallpaper.app")).appendingPathComponent("Contents/Resources/web/previews"))
-        }
-        if !value("wallpaper.repo").isEmpty {
-            dirs.append(URL(fileURLWithPath: value("wallpaper.repo")).appendingPathComponent("web/previews"))
+        if theme.pack == "klasik" {
+            if !value("wallpaper.app").isEmpty {
+                dirs.append(URL(fileURLWithPath: value("wallpaper.app")).appendingPathComponent("Contents/Resources/web/previews"))
+            }
+            if !value("wallpaper.repo").isEmpty {
+                dirs.append(URL(fileURLWithPath: value("wallpaper.repo")).appendingPathComponent("web/previews"))
+            }
+        } else {
+            if !value("wallpaper.packs_dir").isEmpty {
+                dirs.append(URL(fileURLWithPath: value("wallpaper.packs_dir")).appendingPathComponent("\(theme.pack)/previews"))
+            }
+            if !value("wallpaper.repo").isEmpty {
+                dirs.append(URL(fileURLWithPath: value("wallpaper.repo")).appendingPathComponent("packs/\(theme.pack)/previews"))
+            }
         }
         for dir in dirs {
-            if let image = NSImage(contentsOf: dir.appendingPathComponent("\(id).jpg")) {
-                previewCache[id] = image
+            if let image = NSImage(contentsOf: dir.appendingPathComponent("\(theme.id).jpg")) {
+                previewCache[theme.id] = image
                 return image
             }
         }
         return nil
+    }
+
+    /// Paketin görünen adı (tema ızgarasındaki başlıklar için)
+    func packName(_ id: String) -> String {
+        packs.first { $0.id == id }?.name ?? (id == "klasik" ? "Klasik" : id.capitalized)
     }
 
     func refresh() async {
@@ -57,11 +88,19 @@ final class AppModel: ObservableObject {
                 themes = list.output.split(separator: "\n").compactMap { line in
                     let parts = line.split(separator: "\t", omittingEmptySubsequences: false)
                     guard parts.count >= 2 else { return nil }
-                    return WallpaperTheme(id: String(parts[0]), name: String(parts[1]))
+                    return WallpaperTheme(id: String(parts[0]), name: String(parts[1]), pack: parts.count >= 4 ? String(parts[3]) : "klasik")
                 }
+            }
+            // Wallpaper deposu yoksa ya da paketlerden eski bir sürümse liste boş kalır
+            let packList = await Runner.run(["wallpaper", "packs", "--tsv"])
+            packs = !packList.ok ? [] : packList.output.split(separator: "\n").compactMap { line in
+                let parts = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+                guard parts.count >= 4, let state = WallpaperPack.State(rawValue: parts[2]) else { return nil }
+                return WallpaperPack(id: parts[0], name: parts[1], state: state, themeCount: Int(parts[3]) ?? 0, summary: parts.count >= 5 ? parts[4] : "")
             }
         } else {
             themes = []
+            packs = []
         }
     }
 
@@ -97,6 +136,8 @@ final class AppModel: ObservableObject {
     func startWallpaper() async { await perform(["wallpaper", "start"]) }
     func stopWallpaper() async { await perform(["wallpaper", "stop"]) }
     func restartWallpaper() async { await perform(["wallpaper", "restart"]) }
+    func addPack(_ id: String) async { await stream("Paket indiriliyor", ["wallpaper", "pack", "add", id]) }
+    func removePack(_ id: String) async { await stream("Paket kaldırılıyor", ["wallpaper", "pack", "remove", id]) }
 
     // MARK: Tanılama
 

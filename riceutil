@@ -3,7 +3,7 @@
 set -u
 
 PROGRAM_NAME="riceutil"
-VERSION="1.5.0"
+VERSION="1.6.0"
 
 print_usage() {
   cat <<'EOF'
@@ -24,7 +24,10 @@ Duvar kağıdı (ASCII Wallpaper, kısaltma: riceutil wp):
   riceutil wallpaper install         indirir, derler, ~/Applications'a kurar ve başlatır
   riceutil wallpaper update          depoyu çeker, yeniden derler ve kurar
   riceutil wallpaper start|stop|restart
-  riceutil wallpaper themes          temaları listeler (* = etkin tema)
+  riceutil wallpaper themes          kurulu temaları listeler (* = etkin tema)
+  riceutil wallpaper packs           tema paketleri (Klasik dahili; Hyprland, Anime ... ayrı indirilir)
+  riceutil wallpaper pack add <paket>...     paketi indirir ve kurar
+  riceutil wallpaper pack remove <paket>...  paketi kaldırır
   riceutil wallpaper theme <kimlik>  temayı değiştirir
   riceutil wallpaper next            sonraki temaya geçer
   riceutil wallpaper panel on|off    sistem paneli
@@ -387,14 +390,36 @@ wallpaper_running() {
   pgrep -x "$WALLPAPER_PROCESS" >/dev/null 2>&1
 }
 
-wallpaper_themes_file() {
-  local app
+# Tema paketlerinin kurulduğu klasör (Wallpaper'ın scripts/pack.sh betiği ve uygulamayla aynı)
+wallpaper_packs_dir() {
+  printf '%s\n' "$HOME/Library/Application Support/ASCII Wallpaper/packs"
+}
+
+# Kullanılabilir temalar, satır başına "kimlik<TAB>ad<TAB>paket": uygulamanın içindeki Klasik temalar
+# (web/themes.tsv), sonra kurulu paketlerinkiler (katalog web/packs.tsv sırasıyla). Uygulama yoksa boş döner.
+wallpaper_theme_list() {
+  local web
+  local id
+  local builtin
   local file
 
+  web="$1/Contents/Resources/web"
+  [ -f "$web/themes.tsv" ] || return 1
+  awk -F '\t' 'NF >= 2 { printf "%s\t%s\tklasik\n", $1, $2 }' "$web/themes.tsv"
+  [ -f "$web/packs.tsv" ] || return 0
+  while IFS=$'\t' read -r id _ builtin _; do
+    if [ -z "$id" ] || [ "$builtin" = 1 ]; then continue; fi
+    file="$(wallpaper_packs_dir)/$id/themes.tsv"
+    [ -f "$file" ] && awk -F '\t' -v pack="$id" 'NF >= 2 { printf "%s\t%s\t%s\n", $1, $2, pack }' "$file"
+  done <"$web/packs.tsv"
+  return 0
+}
+
+wallpaper_themes_or_fail() {
+  local app
+
   app="$(require_wallpaper_app)" || exit 1
-  file="$app/Contents/Resources/web/themes.tsv"
-  [ -f "$file" ] || fail "Kurulu sürümde tema listesi yok. Güncellemek için: riceutil wallpaper update"
-  printf '%s\n' "$file"
+  wallpaper_theme_list "$app" || fail "Kurulu sürümde tema listesi yok. Güncellemek için: riceutil wallpaper update"
 }
 
 # defaults değerini okur, yoksa verilen varsayılanı basar
@@ -405,8 +430,9 @@ wallpaper_pref() {
   printf '%s\n' "$value"
 }
 
+# theme_name <liste> <kimlik>: listede (wallpaper_theme_list çıktısı) temanın adı
 theme_name() {
-  awk -F '\t' -v id="$2" '$1 == id { print $2; found=1; exit } END { if (!found) exit 1 }' "$1"
+  printf '%s\n' "$1" | awk -F '\t' -v id="$2" '$1 == id { print $2; found=1; exit } END { if (!found) exit 1 }'
 }
 
 # Çalışan uygulamaya dev.eymn.ascii-wallpaper.command dağıtık bildirimi gönderir: anahtar değer [anahtar değer ...]
@@ -478,11 +504,15 @@ wallpaper_install() {
   else
     printf 'Wallpaper indiriliyor: %s\n' "$repo"
     mkdir -p "$(dirname "$dir")"
-    if [ -n "$ref" ]; then
-      git clone --branch "$ref" "$repo" "$dir"
-    else
-      git clone "$repo" "$dir"
-    fi || fail "Wallpaper deposu indirilemedi: $repo"
+    # Seyrek ve dosyasız klon: yalnız uygulamanın kendisi iner; tema paketlerinin görselleri ancak
+    # "riceutil wallpaper pack add" ile istenince indirilir. Git bunu desteklemezse tam klona düşer.
+    local branch=()
+    [ -n "$ref" ] && branch=(--branch "$ref")
+    if ! { git clone --filter=blob:none --sparse ${branch[@]+"${branch[@]}"} "$repo" "$dir" &&
+      git -C "$dir" sparse-checkout set web mac scripts; }; then
+      rm -rf "$dir"
+      git clone ${branch[@]+"${branch[@]}"} "$repo" "$dir" || fail "Wallpaper deposu indirilemedi: $repo"
+    fi
   fi
 
   [ -x "$dir/scripts/install.sh" ] || fail "$dir/scripts/install.sh bulunamadı; depo güncel mi?"
@@ -497,6 +527,16 @@ wallpaper_saver() {
   [ -x "$dir/scripts/build-saver.sh" ] || fail "Wallpaper deposu bulunamadı ($dir). Önce: riceutil wallpaper install"
   "$dir/scripts/build-saver.sh" --install || fail "Ekran koruyucu kurulamadı."
   open "x-apple.systempreferences:com.apple.ScreenSaver-Settings.extension" 2>/dev/null || true
+}
+
+# Tema paketleri Wallpaper deposunun scripts/pack.sh betiğiyle kurulur (seyrek klonda paketi de indirir)
+wallpaper_pack() {
+  local dir
+
+  dir="$(wallpaper_dir)"
+  [ -d "$dir/.git" ] || fail "Wallpaper deposu bulunamadı ($dir). Önce: riceutil wallpaper install"
+  [ -x "$dir/scripts/pack.sh" ] || fail "Kurulu Wallpaper tema paketlerini bilmiyor. Önce: riceutil wallpaper update"
+  AW_PACKS_DIR="$(wallpaper_packs_dir)" "$dir/scripts/pack.sh" "$@"
 }
 
 wallpaper_start() {
@@ -527,46 +567,47 @@ wallpaper_stop() {
 }
 
 wallpaper_themes() {
-  local file
+  local list
   local current
 
-  file="$(wallpaper_themes_file)" || exit 1
+  list="$(wallpaper_themes_or_fail)" || exit 1
   current="$(wallpaper_pref theme lake)"
   if [ "${1:-}" = "--tsv" ]; then
-    awk -F '\t' -v cur="$current" 'NF >= 2 { printf "%s\t%s\t%d\n", $1, $2, ($1 == cur) }' "$file"
+    # kimlik, ad, etkin (1|0), paket
+    printf '%s\n' "$list" | awk -F '\t' -v cur="$current" 'NF >= 2 { printf "%s\t%s\t%d\t%s\n", $1, $2, ($1 == cur), $3 }'
   else
-    awk -F '\t' -v cur="$current" 'NF >= 2 { printf "%s %-20s %s\n", ($1 == cur ? "*" : " "), $1, $2 }' "$file"
+    printf '%s\n' "$list" | awk -F '\t' -v cur="$current" 'NF >= 2 { printf "%s %-20s %-24s %s\n", ($1 == cur ? "*" : " "), $1, $2, $3 }'
   fi
 }
 
 wallpaper_set_theme() {
-  local file
+  local list
   local name
 
-  file="$(wallpaper_themes_file)" || exit 1
-  name="$(theme_name "$file" "$1")" || fail "Böyle bir tema yok: $1 (liste için: riceutil wallpaper themes)"
+  list="$(wallpaper_themes_or_fail)" || exit 1
+  name="$(theme_name "$list" "$1")" || fail "Böyle bir tema yok: $1 (liste: riceutil wallpaper themes, paketler: riceutil wallpaper packs)"
   wallpaper_apply theme "$1" theme string
   printf 'Tema: %s (%s)\n' "$name" "$1"
 }
 
 wallpaper_next() {
-  local file
+  local list
   local current
   local next
 
-  file="$(wallpaper_themes_file)" || exit 1
+  list="$(wallpaper_themes_or_fail)" || exit 1
   if wallpaper_running; then
     wallpaper_send next 1
     sleep 0.3
   else
     current="$(wallpaper_pref theme lake)"
-    next="$(awk -F '\t' -v cur="$current" '
+    next="$(printf '%s\n' "$list" | awk -F '\t' -v cur="$current" '
       NF >= 2 { ids[n++] = $1; if ($1 == cur) at = n }
-      END { if (n) print ids[at % n] }' "$file")"
+      END { if (n) print ids[at % n] }')"
     [ -n "$next" ] && defaults write "$WALLPAPER_ID" theme -string "$next"
   fi
   current="$(wallpaper_pref theme lake)"
-  printf 'Tema: %s (%s)\n' "$(theme_name "$file" "$current" || printf '?')" "$current"
+  printf 'Tema: %s (%s)\n' "$(theme_name "$list" "$current" || printf '?')" "$current"
 }
 
 wallpaper_status() {
@@ -574,19 +615,19 @@ wallpaper_status() {
   local running=0
   local theme
   local name=""
-  local file
+  local list
 
   app="$(find_wallpaper_app)" || app=""
   wallpaper_running && running=1
   theme="$(wallpaper_pref theme lake)"
-  file="$app/Contents/Resources/web/themes.tsv"
-  if [ -n "$app" ] && [ -f "$file" ]; then
-    name="$(theme_name "$file" "$theme")" || name=""
+  if [ -n "$app" ] && list="$(wallpaper_theme_list "$app")"; then
+    name="$(theme_name "$list" "$theme")" || name=""
   fi
 
   if [ "${1:-}" = "--tsv" ]; then
     printf 'wallpaper.app\t%s\n' "$app"
     printf 'wallpaper.repo\t%s\n' "$(wallpaper_dir)"
+    printf 'wallpaper.packs_dir\t%s\n' "$(wallpaper_packs_dir)"
     printf 'wallpaper.running\t%s\n' "$running"
     printf 'wallpaper.theme\t%s\n' "$theme"
     printf 'wallpaper.theme_name\t%s\n' "$name"
@@ -646,6 +687,26 @@ wallpaper_command() {
       ;;
     next)
       wallpaper_next
+      ;;
+    packs)
+      [ "$#" -le 1 ] || fail "wallpaper packs en fazla --tsv alır."
+      wallpaper_pack list "$@"
+      ;;
+    pack)
+      local action="${1:-list}"
+      [ "$#" -gt 0 ] && shift
+      case "$action" in
+        list) wallpaper_pack list "$@" ;;
+        add|install)
+          [ "$#" -gt 0 ] || fail "Kullanım: riceutil wallpaper pack add <paket>... (liste: riceutil wallpaper packs)"
+          wallpaper_pack add "$@"
+          ;;
+        remove|rm|uninstall)
+          [ "$#" -gt 0 ] || fail "Kullanım: riceutil wallpaper pack remove <paket>..."
+          wallpaper_pack remove "$@"
+          ;;
+        *) fail "Kullanım: riceutil wallpaper pack add|remove <paket>... (liste: riceutil wallpaper packs)" ;;
+      esac
       ;;
     panel|clock|name)
       [ "$#" -eq 1 ] || fail "Kullanım: riceutil wallpaper $sub on|off"

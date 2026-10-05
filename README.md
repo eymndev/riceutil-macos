@@ -55,7 +55,10 @@ riceutil wallpaper install          # indirir, derler, ~/Applications'a kurar, e
 riceutil wallpaper update           # depoyu çekip yeniden derler ve kurar
 riceutil wallpaper                  # durum
 riceutil wallpaper start | stop | restart
-riceutil wallpaper themes           # temalar, * = etkin tema
+riceutil wallpaper themes           # kurulu temalar, * = etkin tema
+riceutil wallpaper packs            # tema paketleri: Klasik (dahili), Hyprland, Anime ...
+riceutil wallpaper pack add anime   # paketi indirir ve kurar
+riceutil wallpaper pack remove anime
 riceutil wallpaper theme fire       # temayı değiştirir
 riceutil wallpaper next             # sonraki tema
 riceutil wallpaper panel on|off     # sistem paneli
@@ -65,7 +68,9 @@ riceutil wallpaper rotate 30        # temayı 30 dakikada bir değiştirir (0 = 
 riceutil wallpaper saver            # ekran koruyucuyu kurar ve Ekran Koruyucu ayarlarını açar
 ```
 
-Uygulama çalışırken ayarlar anında değişir; kapalıyken bir sonraki açılışta geçerli olur. Depo varsayılan olarak `~/.local/share/riceutil/Wallpaper` içine indirilir. Kendi klonunu kullanmak için:
+Uygulama çalışırken ayarlar anında değişir; kapalıyken bir sonraki açılışta geçerli olur. Depo varsayılan olarak `~/.local/share/riceutil/Wallpaper` içine indirilir.
+
+Temalar paketlere ayrılmıştır: Klasik temalar uygulamayla gelir, Hyprland ve Anime gibi paketler `riceutil wallpaper pack add <paket>` ile ayrı indirilir. riceutil depoyu seyrek (sparse) ve dosyasız (`--filter=blob:none`) klonlar; bir paketin görselleri ancak o paket eklenince iner. Kurulu paketler `~/Library/Application Support/ASCII Wallpaper/packs` içindedir ve `riceutil wallpaper update` onları da günceller. Paketlerden önceki bir sürümden güncellerken o an depoda olan paketlerin hepsi kurulur, yani kullandığın temalar kaybolmaz. Kendi klonunu kullanmak için:
 
 ```sh
 export RICEUTIL_WALLPAPER_DIR="$HOME/kod/Wallpaper"
@@ -76,7 +81,7 @@ export RICEUTIL_WALLPAPER_DIR="$HOME/kod/Wallpaper"
 `riceutil gui` ya da Uygulamalar'dan Riceutil. Bölümler:
 
 - **Genel**: yabai, skhd, Homebrew ve duvar kağıdının durumu
-- **Duvar Kağıdı**: kur/güncelle, başlat/durdur, önizlemeli ve tıklayınca değişen tema listesi, panel/saat/tema adı ve sırayla değiştirme ayarları, ekran koruyucu kurulumu
+- **Duvar Kağıdı**: kur/güncelle, başlat/durdur, tema paketlerini indirme/kaldırma, paketlere göre gruplanmış önizlemeli ve tıklayınca değişen tema listesi, panel/saat/tema adı ve sırayla değiştirme ayarları, ekran koruyucu kurulumu
 - **Config ve WM**: skhd, yabai, Kitty ve Zsh config'lerini uygulamanın içinde düz metin olarak düzenleme (eş aralıklı yazı, akıllı tırnak ve otomatik düzeltme yok, her zaman UTF-8 düz metin kaydeder) ya da Terminal'de (Vim) açma, skhd/yabai'yi yeniden yükleme, pencere yöneticisi modu (macOS / yabai / Stage Manager)
 - **Tanılama**: `riceutil doctor` çıktısı, kopyalama ve dosyaya kaydetme
 - **Homebrew**: `brew update` ve `brew upgrade`, çıktısı canlı akar

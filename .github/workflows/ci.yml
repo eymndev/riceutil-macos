@@ -54,6 +54,12 @@ jobs:
           sleep 1
           test "$(defaults read dev.eymn.ascii-wallpaper showThemeName)" = 0
           riceutil wallpaper name on
+          # Seyrek klonla yeni kurulum yalnız Klasik temalarla başlar; paket istenince iner
+          if riceutil wallpaper theme hypr-kath 2>/dev/null; then echo "paket kurulmadan Hypr teması seçilebildi"; exit 1; fi
+          riceutil wallpaper packs
+          riceutil wallpaper pack add hyprland
+          sleep 6
+          riceutil wallpaper packs | grep -q "hyprland.*kurulu"
           riceutil wallpaper theme hypr-kath
           sleep 3
           screencapture -x wallpaper-hypr-kath.png || true
