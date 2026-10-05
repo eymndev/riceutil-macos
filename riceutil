@@ -408,7 +408,7 @@ wallpaper_theme_list() {
   awk -F '\t' 'NF >= 2 { printf "%s\t%s\tklasik\n", $1, $2 }' "$web/themes.tsv"
   [ -f "$web/packs.tsv" ] || return 0
   while IFS=$'\t' read -r id _ builtin _; do
-    [ -n "$id" ] && [ "$builtin" != 1 ] || continue
+    if [ -z "$id" ] || [ "$builtin" = 1 ]; then continue; fi
     file="$(wallpaper_packs_dir)/$id/themes.tsv"
     [ -f "$file" ] && awk -F '\t' -v pack="$id" 'NF >= 2 { printf "%s\t%s\t%s\n", $1, $2, pack }' "$file"
   done <"$web/packs.tsv"
